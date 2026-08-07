@@ -1,4 +1,5 @@
 import sqlite3
+from config import DEFAULT_CHANNELS
 
 db = sqlite3.connect("bot.db", check_same_thread=False)
 c = db.cursor()
@@ -7,6 +8,11 @@ c = db.cursor()
 c.execute("CREATE TABLE IF NOT EXISTS files (code TEXT PRIMARY KEY, file_id TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS channels (username TEXT PRIMARY KEY)")
 c.execute("CREATE TABLE IF NOT EXISTS banner (text TEXT)")
+db.commit()
+
+# ===== اضافه کردن کانال‌های پیش‌فرض =====
+for ch in DEFAULT_CHANNELS:
+    c.execute("INSERT OR IGNORE INTO channels VALUES (?)", (ch,))
 db.commit()
 
 # ===== توابع فایل‌ها =====
@@ -18,6 +24,14 @@ def find_file(code):
     c.execute("SELECT file_id FROM files WHERE code=?", (code,))
     row = c.fetchone()
     return row[0] if row else None
+
+def delete_file(code):
+    c.execute("DELETE FROM files WHERE code=?", (code,))
+    db.commit()
+
+def get_all_files():
+    c.execute("SELECT code FROM files")
+    return [row[0] for row in c.fetchall()]
 
 # ===== توابع کانال‌ها =====
 def add_channel(username):
