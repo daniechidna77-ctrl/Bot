@@ -91,6 +91,42 @@ async def check_mem(call: types.CallbackQuery):
     else:
         await call.message.answer(f"❌ چپتر {code} پیدا نشد!")
 
+# ===== منوی کاربر =====
+@router.message(Command("menu"))
+async def menu(message: types.Message):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📖 راهنما", callback_data="help")],
+        [InlineKeyboardButton(text="📢 کانال‌ها", callback_data="channels_list")],
+        [InlineKeyboardButton(text="👤 پروفایل", callback_data="profile")]
+    ])
+    await message.answer("📋 منوی اصلی:", reply_markup=keyboard)
+
+# ===== هندلرهای منو =====
+@router.callback_query(lambda c: c.data == "help")
+async def help_menu(call: types.CallbackQuery):
+    await call.message.edit_text(
+        "📖 راهنما:\n\n"
+        "برای دریافت چپتر از لینک مخصوص استفاده کن.\n"
+        "مثال: https://t.me/ربات?start=1_2"
+    )
+
+@router.callback_query(lambda c: c.data == "channels_list")
+async def channels_list_menu(call: types.CallbackQuery):
+    channels = get_channels()
+    if not channels:
+        await call.message.edit_text("❌ کانالی ثبت نشده!")
+        return
+    text = "📢 لیست کانال‌ها:\n" + "\n".join([f"• @{ch}" for ch in channels])
+    await call.message.edit_text(text)
+
+@router.callback_query(lambda c: c.data == "profile")
+async def profile_menu(call: types.CallbackQuery):
+    await call.message.edit_text(
+        f"👤 پروفایل:\n\n"
+        f"آیدی: {call.from_user.id}\n"
+        f"نام: {call.from_user.full_name}"
+    )
+
 # ===== پنل ادمین (شیشه‌ای) =====
 @router.message(Command("panel"))
 async def panel(message: types.Message):
