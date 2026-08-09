@@ -4,12 +4,11 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMIN_ID
 from database import *
 import asyncio
-import re
 
 router = Router()
 user_states = {}
 
-# ===== منوی کاربر =====
+# ===== منوی کاربر (بدون اسم ربات) =====
 def user_menu_keyboard():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📖 راهنما", callback_data="help")],
@@ -22,19 +21,14 @@ def user_menu_keyboard():
     ])
     return keyboard
 
-# ===== دکمه‌های عضویت (با ری اکشن) =====
-def join_keyboard(channels, post_link=None):
+# ===== دکمه‌های عضویت =====
+def join_keyboard(channels):
     buttons = []
     for ch in channels:
         buttons.append([InlineKeyboardButton(text=f"📢 عضویت در @{ch}", url=f"https://t.me/{ch}")])
     if len(channels) > 1:
-        buttons.append([InlineKeyboardButton(text="🔗 عضویت در همه کانال‌ها", callback_data="join_all")])
+        buttons.append([InlineKeyboardButton(text="🔗 عضویت در همه", callback_data="join_all")])
     buttons.append([InlineKeyboardButton(text="✅ عضو شدم", callback_data="check_mem")])
-    
-    # دکمه ری اکشن (لایک)
-    if post_link:
-        buttons.append([InlineKeyboardButton(text="👍 ری اکشن بزن", url=post_link)])
-    
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # ===== چک کردن عضویت =====
@@ -51,14 +45,14 @@ async def is_member(bot, user_id):
             return False
     return True
 
-# ===== ارسال فایل با کپشن و اشتراک‌گذاری =====
+# ===== ارسال فایل با اشتراک‌گذاری =====
 async def send_file_with_share(message, file_id, file_type, code, caption=""):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📤 اشتراک‌گذاری چپتر", callback_data=f"share_{code}")],
+        [InlineKeyboardButton(text="📤 اشتراک‌گذاری", callback_data=f"share_{code}")],
         [InlineKeyboardButton(text="📋 منو", callback_data="menu")]
     ])
     
-    final_caption = f"📖 چپتر {code}\n"
+    final_caption = f"📖 **چپتر {code}**\n"
     if caption:
         final_caption += f"\n{caption}"
     
@@ -80,7 +74,9 @@ async def start(message: types.Message):
     
     if len(args) == 1:
         await message.answer(
-            f"👋 سلام {message.from_user.first_name}!\n{banner}",
+            f"👋 **سلام {message.from_user.first_name}!**\n\n"
+            f"{banner}\n\n"
+            f"😊 خوش اومدی! از منو استفاده کن تا ببینم چیکار میخوای بکنی.",
             reply_markup=user_menu_keyboard()
         )
         return
@@ -88,36 +84,35 @@ async def start(message: types.Message):
     code = args[1]
     user_states[message.from_user.id] = {"code": code}
     
-    # چک کردن عضویت
     channels = get_channels()
     if channels:
         if not await is_member(message.bot, message.from_user.id):
             await message.answer(
-                "🔒 برای دریافت فایل، ابتدا عضو کانال‌ها شو:",
+                "🔒 **اول عضو کانال‌ها شو!** 😊\n\n"
+                "برای دریافت فایل، باید تو این کانال‌ها عضو بشی:",
                 reply_markup=join_keyboard(channels)
             )
             return
     
-    # پیدا کردن فایل
     file_info = find_file(code)
     if file_info:
         file_id, file_type, caption = file_info
         increment_download(code)
         await send_file_with_share(message, file_id, file_type, code, caption or "")
     else:
-        await message.answer(f"❌ چپتر {code} پیدا نشد!")
+        await message.answer(f"❌ **چپتر {code} پیدا نشد!** 😅\n\nاگه مطمئنی هست، به ادمین بگو.")
 
 # ===== بررسی عضویت =====
 @router.callback_query(lambda c: c.data == "check_mem")
 async def check_mem(call: types.CallbackQuery):
     state = user_states.get(call.from_user.id)
     if not state:
-        await call.message.edit_text("❌ لینک نامعتبر!")
+        await call.message.edit_text("❌ لینک نامعتبر! 😅")
         return
     
     code = state.get("code")
     if not await is_member(call.bot, call.from_user.id):
-        await call.answer("❌ هنوز عضو نشدی!", show_alert=True)
+        await call.answer("❌ هنوز عضو نشدی! برو عضو شو 😊", show_alert=True)
         return
     
     file_info = find_file(code)
@@ -127,9 +122,9 @@ async def check_mem(call: types.CallbackQuery):
         increment_download(code)
         await send_file_with_share(call.message, file_id, file_type, code, caption or "")
     else:
-        await call.message.answer(f"❌ چپتر {code} پیدا نشد!")
+        await call.message.answer(f"❌ چپتر {code} پیدا نشد! 😅")
 
-# ===== عضویت در همه کانال‌ها =====
+# ===== عضویت در همه =====
 @router.callback_query(lambda c: c.data == "join_all")
 async def join_all(call: types.CallbackQuery):
     channels = get_channels()
@@ -138,23 +133,29 @@ async def join_all(call: types.CallbackQuery):
         return
     links = "\n".join([f"• @{ch}" for ch in channels])
     await call.message.edit_text(
-        f"🔗 برای عضویت در همه کانال‌ها روی لینک‌ها کلیک کن:\n\n{links}\n\n✅ بعد از عضویت، روی «عضو شدم» کلیک کن."
+        f"🔗 **برای عضویت در همه کانال‌ها:**\n\n"
+        f"{links}\n\n"
+        f"✅ بعد از عضویت، بزن **عضو شدم**!"
     )
 
 # ===== منوی کاربر =====
 @router.message(Command("menu"))
 async def menu(message: types.Message):
-    await message.answer("📋 منوی اصلی:", reply_markup=user_menu_keyboard())
+    await message.answer(
+        "📋 **منوی اصلی:**\n\n"
+        "😊 هر چی نیاز داری، اینجاست!",
+        reply_markup=user_menu_keyboard()
+    )
 
 # ===== راهنما =====
 @router.callback_query(lambda c: c.data == "help")
 async def help_menu(call: types.CallbackQuery):
     await call.message.edit_text(
-        "📖 راهنما:\n\n"
-        "برای دریافت چپتر از لینک مخصوص استفاده کن.\n"
-        "مثال: https://t.me/Yuri199bot?start=1_2\n\n"
-        "🔹 بعد از عضویت در کانال‌ها، فایل برات ارسال میشه.\n"
-        "🔹 می‌تونی از منو برای دسترسی به بخش‌های مختلف استفاده کنی."
+        "📖 **راهنما:**\n\n"
+        "🔹 برای دریافت چپتر از لینک مخصوص استفاده کن:\n"
+        "`https://t.me/Yuri199bot?start=1_2`\n\n"
+        "🔹 اول عضو کانال‌ها شو، بعد فایل میاد!\n"
+        "🔹 اگه سوالی داری، از منو بپرس 😊"
     )
 
 # ===== لیست کانال‌ها =====
@@ -162,9 +163,9 @@ async def help_menu(call: types.CallbackQuery):
 async def channels_list_menu(call: types.CallbackQuery):
     channels = get_channels()
     if not channels:
-        await call.message.edit_text("❌ کانالی ثبت نشده!")
+        await call.message.edit_text("❌ کانالی ثبت نشده! 😅")
         return
-    text = "📢 لیست کانال‌ها:\n" + "\n".join([f"• @{ch}" for ch in channels])
+    text = "📢 **لیست کانال‌ها:**\n\n" + "\n".join([f"• @{ch}" for ch in channels])
     await call.message.edit_text(text)
 
 # ===== پروفایل =====
@@ -172,35 +173,35 @@ async def channels_list_menu(call: types.CallbackQuery):
 async def profile_menu(call: types.CallbackQuery):
     theme = get_user_theme(call.from_user.id)
     await call.message.edit_text(
-        f"👤 پروفایل:\n\n"
-        f"آیدی: {call.from_user.id}\n"
-        f"نام: {call.from_user.full_name}\n"
-        f"تم: {'🌙 شب' if theme == 'dark' else '☀️ روز'}"
+        f"👤 **پروفایل:**\n\n"
+        f"🆔 آیدی: `{call.from_user.id}`\n"
+        f"📛 نام: {call.from_user.full_name}\n"
+        f"🎨 تم: {'🌙 شب' if theme == 'dark' else '☀️ روز'}"
     )
 
 # ===== نظر یا پیشنهاد =====
 @router.callback_query(lambda c: c.data == "feedback")
 async def feedback_start(call: types.CallbackQuery):
     user_states[call.from_user.id] = {"state": "waiting_feedback"}
-    await call.message.edit_text("💬 نظر یا پیشنهادت رو بفرست:")
+    await call.message.edit_text("💬 **نظر یا پیشنهادت رو بفرست:**\n\n(هر چی دوست داری بگو، خوشحال میشم بشنوم 😊)")
 
 @router.message(lambda m: m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_feedback")
 async def get_feedback(message: types.Message):
     add_feedback(message.from_user.id, message.text)
     user_states[message.from_user.id] = {}
-    await message.answer("✅ نظرت با موفقیت ثبت شد! ممنون 🙏")
+    await message.answer("✅ **نظرت ثبت شد!** 🙏\n\nممنون که کمک میکنی بهتر بشم 😊")
 
 # ===== سوال =====
 @router.callback_query(lambda c: c.data == "ask_question")
 async def ask_question_start(call: types.CallbackQuery):
     user_states[call.from_user.id] = {"state": "waiting_question"}
-    await call.message.edit_text("❓ سوالت رو بفرست:")
+    await call.message.edit_text("❓ **سوالت رو بفرست:**\n\n(هر چی هست بپرس، جواب میدم 😊)")
 
 @router.message(lambda m: m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_question")
 async def get_question(message: types.Message):
     add_question(message.from_user.id, message.text)
     user_states[message.from_user.id] = {}
-    await message.answer("✅ سوال شما ثبت شد! به زودی پاسخ داده میشه.")
+    await message.answer("✅ **سوال شما ثبت شد!** 📝\n\nبه زودی جواب میدم 😊")
 
 # ===== تغییر تم =====
 @router.callback_query(lambda c: c.data == "change_theme")
@@ -209,9 +210,9 @@ async def change_theme_start(call: types.CallbackQuery):
     new_theme = "dark" if current_theme == "light" else "light"
     set_user_theme(call.from_user.id, new_theme)
     emoji = "🌙" if new_theme == "dark" else "☀️"
-    await call.message.edit_text(f"✅ تم به {emoji} {'شب' if new_theme == 'dark' else 'روز'} تغییر کرد!")
+    await call.message.edit_text(f"✅ **تم به {emoji} {'شب' if new_theme == 'dark' else 'روز'} تغییر کرد!**")
 
-# ===== اشتراک‌گذاری چپتر =====
+# ===== اشتراک‌گذاری =====
 @router.callback_query(lambda c: c.data.startswith("share_") and c.data != "share_bot")
 async def share_chapter(call: types.CallbackQuery):
     code = call.data.split("_")[1]
@@ -219,19 +220,19 @@ async def share_chapter(call: types.CallbackQuery):
     share_link = f"https://t.me/{bot_username}?start={code}"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📤 اشتراک‌گذاری در تلگرام", url=f"https://t.me/share/url?url={share_link}&text=📖 چپتر {code} رو دریافت کن!")],
+        [InlineKeyboardButton(text="📤 اشتراک‌گذاری", url=f"https://t.me/share/url?url={share_link}&text=📖 چپتر {code} رو دریافت کن!")],
         [InlineKeyboardButton(text="📋 کپی لینک", callback_data=f"copy_{code}")],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu")]
     ])
     
     await call.message.edit_text(
-        f"📤 لینک اشتراک‌گذاری چپتر {code}:\n\n"
+        f"📤 **لینک اشتراک‌گذاری چپتر {code}:**\n\n"
         f"`{share_link}`\n\n"
-        f"این لینک رو برای دوستانت بفرست تا چپتر رو دریافت کنن.",
+        f"این لینک رو برای دوستانت بفرست! 😊",
         reply_markup=keyboard
     )
 
-# ===== کپی لینک چپتر =====
+# ===== کپی لینک =====
 @router.callback_query(lambda c: c.data.startswith("copy_"))
 async def copy_link(call: types.CallbackQuery):
     code = call.data.split("_")[1]
@@ -240,9 +241,8 @@ async def copy_link(call: types.CallbackQuery):
     
     await call.answer(f"✅ لینک کپی شد!", show_alert=True)
     await call.message.edit_text(
-        f"📤 لینک چپتر {code}:\n\n"
-        f"`{share_link}`\n\n"
-        f"لینک رو کپی کن و برای دوستانت بفرست.",
+        f"📤 **لینک چپتر {code}:**\n\n"
+        f"`{share_link}`",
         reply_markup=InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"share_{code}")]
         ])
@@ -255,24 +255,28 @@ async def share_bot(call: types.CallbackQuery):
     share_link = f"https://t.me/{bot_username}"
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📤 دعوت به ربات", url=f"https://t.me/share/url?url={share_link}&text=🤖 به این ربات بپیوند!")],
+        [InlineKeyboardButton(text="📤 دعوت", url=f"https://t.me/share/url?url={share_link}&text=🤖 به این ربات بپیوند!")],
         [InlineKeyboardButton(text="📋 کپی لینک", callback_data="copy_bot_link")],
         [InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu")]
     ])
     
     await call.message.edit_text(
-        f"🤖 لینک ربات:\n\n"
+        f"🤖 **لینک ربات:**\n\n"
         f"`{share_link}`\n\n"
-        f"دوستانت رو به ربات دعوت کن!",
+        f"دوستانت رو دعوت کن! 😊",
         reply_markup=keyboard
     )
 
 # ===== کپی لینک ربات =====
 @router.callback_query(lambda c: c.data == "copy_bot_link")
 async def copy_bot_link(call: types.CallbackQuery):
-    await call.answer(f"✅ لینک ربات کپی شد!", show_alert=True)
+    await call.answer(f"✅ لینک کپی شد!", show_alert=True)
 
-# ===== دکمه برگشت به منو =====
+# ===== برگشت به منو =====
 @router.callback_query(lambda c: c.data == "menu")
 async def back_menu(call: types.CallbackQuery):
-    await call.message.edit_text("📋 منوی اصلی:", reply_markup=user_menu_keyboard())
+    await call.message.edit_text(
+        "📋 **منوی اصلی:**\n\n"
+        "😊 هر چی نیاز داری، اینجاست!",
+        reply_markup=user_menu_keyboard()
+    )
