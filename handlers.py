@@ -8,7 +8,7 @@ import asyncio
 router = Router()
 user_states = {}
 
-# ===== منوی کاربر (بدون اسم ربات) =====
+# ===== منوی کاربر =====
 def user_menu_keyboard():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📖 راهنما", callback_data="help")],
@@ -31,6 +31,17 @@ def join_keyboard(channels):
     buttons.append([InlineKeyboardButton(text="✅ عضو شدم", callback_data="check_mem")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+# ===== دکمه‌های امتیازدهی =====
+def rating_keyboard(code):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⭐", callback_data=f"rate_{code}_1"),
+         InlineKeyboardButton(text="⭐⭐", callback_data=f"rate_{code}_2"),
+         InlineKeyboardButton(text="⭐⭐⭐", callback_data=f"rate_{code}_3"),
+         InlineKeyboardButton(text="⭐⭐⭐⭐", callback_data=f"rate_{code}_4"),
+         InlineKeyboardButton(text="⭐⭐⭐⭐⭐", callback_data=f"rate_{code}_5")]
+    ])
+    return keyboard
+
 # ===== چک کردن عضویت =====
 async def is_member(bot, user_id):
     channels = get_channels()
@@ -45,16 +56,18 @@ async def is_member(bot, user_id):
             return False
     return True
 
-# ===== ارسال فایل با اشتراک‌گذاری =====
+# ===== ارسال فایل با امتیازدهی =====
 async def send_file_with_share(message, file_id, file_type, code, caption=""):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📤 اشتراک‌گذاری", callback_data=f"share_{code}")],
+        [InlineKeyboardButton(text="⭐ امتیاز بده", callback_data=f"show_rating_{code}")],
         [InlineKeyboardButton(text="📋 منو", callback_data="menu")]
     ])
     
     final_caption = f"📖 **چپتر {code}**\n"
     if caption:
         final_caption += f"\n{caption}"
+    final_caption += f"\n\n⭐ به این چپتر امتیاز بده!"
     
     if file_type == "document":
         await message.answer_document(file_id, caption=final_caption, reply_markup=keyboard)
@@ -64,6 +77,27 @@ async def send_file_with_share(message, file_id, file_type, code, caption=""):
         await message.answer_video(file_id, caption=final_caption, reply_markup=keyboard)
     else:
         await message.answer_document(file_id, caption=final_caption, reply_markup=keyboard)
+
+# ===== نمایش امتیازدهی =====
+@router.callback_query(lambda c: c.data.startswith("show_rating_"))
+async def show_rating(call: types.CallbackQuery):
+    code = call.data.split("_")[2]
+    await call.message.edit_reply_markup(reply_markup=rating_keyboard(code))
+    await call.answer("⭐ امتیاز بده!", show_alert=False)
+
+# ===== دریافت امتیاز =====
+@router.callback_query(lambda c: c.data.startswith("rate_"))
+async def get_rating(call: types.CallbackQuery):
+    _, code, rating = call.data.split("_")
+    rating = int(rating)
+    
+    # ذخیره امتیاز در دیتابیس
+    save_rating(code, call.from_user.id, rating)
+    
+    emojis = ["⭐", "⭐⭐", "⭐⭐⭐", "⭐⭐⭐⭐", "⭐⭐⭐⭐⭐"]
+    await call.message.edit_reply_markup(reply_markup=None)
+    await call.message.answer(f"✅ **امتیاز شما ثبت شد!**\n{emojis[rating-1]}")
+    await call.answer(f"امتیاز {rating} ثبت شد!", show_alert=False)
 
 # ===== استارت =====
 @router.message(CommandStart())
@@ -76,7 +110,7 @@ async def start(message: types.Message):
         await message.answer(
             f"👋 **سلام {message.from_user.first_name}!**\n\n"
             f"{banner}\n\n"
-            f"😊 خوش اومدی! از منو استفاده کن تا ببینم چیکار میخوای بکنی.",
+            f"😊 خوش اومدی!",
             reply_markup=user_menu_keyboard()
         )
         return
@@ -100,7 +134,7 @@ async def start(message: types.Message):
         increment_download(code)
         await send_file_with_share(message, file_id, file_type, code, caption or "")
     else:
-        await message.answer(f"❌ **چپتر {code} پیدا نشد!** 😅\n\nاگه مطمئنی هست، به ادمین بگو.")
+        await message.answer(f"❌ **چپتر {code} پیدا نشد!** 😅")
 
 # ===== بررسی عضویت =====
 @router.callback_query(lambda c: c.data == "check_mem")
