@@ -22,7 +22,7 @@ async def panel(message: types.Message):
             [KeyboardButton(text="📝 تنظیم بنر"), KeyboardButton(text="🗑 حذف بنر")],
             [KeyboardButton(text="📊 آمار"), KeyboardButton(text="📢 ارسال همگانی")],
             [KeyboardButton(text="💬 نظرات"), KeyboardButton(text="❓ سوالات")],
-            [KeyboardButton(text="🔙 بستن پنل")]
+            [KeyboardButton(text="👥 دیدن پنل عضویت"), KeyboardButton(text="🔙 بستن پنل")]
         ],
         resize_keyboard=True
     )
@@ -33,7 +33,22 @@ async def panel(message: types.Message):
 async def close_panel(message: types.Message):
     await message.answer("✅ پنل بسته شد!", reply_markup=types.ReplyKeyboardRemove())
 
-# ===== افزودن چپتر =====
+# ===== دیدن پنل عضویت =====
+@router.message(lambda m: m.text == "👥 دیدن پنل عضویت" and m.from_user.id == ADMIN_ID)
+async def view_join_panel(message: types.Message):
+    channels = get_channels()
+    if not channels:
+        await message.answer("❌ کانالی برای عضویت اجباری تنظیم نشده!")
+        return
+    
+    from handlers import join_keyboard
+    await message.answer(
+        "📋 پنل عضویت اجباری:\n\n"
+        "در کانال‌های زیر عضو بشید:",
+        reply_markup=join_keyboard(channels)
+    )
+
+# ===== افزودن چپتر با کپشن =====
 @router.message(lambda m: m.text == "➕ افزودن چپتر" and m.from_user.id == ADMIN_ID)
 async def add_file_start(message: types.Message):
     user_states[message.from_user.id] = {"state": "waiting_code"}
@@ -42,7 +57,7 @@ async def add_file_start(message: types.Message):
 @router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_code")
 async def get_code(message: types.Message):
     user_states[message.from_user.id] = {"state": "waiting_file", "code": message.text.strip()}
-    await message.answer("📄 حالا فایل رو ارسال کن (PDF, ZIP, عکس, ویدیو):")
+    await message.answer("📄 حالا فایل رو ارسال کن (PDF, ZIP, عکس, ویدیو):\n\n📝 می‌تونی کپشن هم برای فایل بنویسی (اختیاری)")
 
 @router.message(lambda m: m.from_user.id == ADMIN_ID and m.document)
 async def get_file(message: types.Message):
@@ -50,9 +65,13 @@ async def get_file(message: types.Message):
     if state.get("state") != "waiting_file":
         await message.answer("❌ لطفاً اول از گزینه افزودن چپتر استفاده کن!")
         return
+    
     code = state.get("code")
     if not code:
         return
+    
+    # گرفتن کپشن
+    caption = message.caption or ""
     
     file_type = "document"
     if message.document.mime_type == "application/pdf":
@@ -62,9 +81,10 @@ async def get_file(message: types.Message):
     elif message.document.mime_type and message.document.mime_type.startswith("video"):
         file_type = "video"
     
-    save_file(code, message.document.file_id, file_type)
+    # ذخیره با کپشن
+    save_file(code, message.document.file_id, file_type, caption)
     user_states[message.from_user.id] = {}
-    await message.answer(f"✅ چپتر {code} ذخیره شد! (نوع: {file_type})")
+    await message.answer(f"✅ چپتر {code} ذخیره شد! (نوع: {file_type})\n📝 کپشن: {caption if caption else 'ندارد'}")
 
 # ===== لیست چپترها =====
 @router.message(lambda m: m.text == "📋 لیست چپترها" and m.from_user.id == ADMIN_ID)
@@ -73,7 +93,7 @@ async def list_files(message: types.Message):
     if not files:
         await message.answer("❌ هیچ چپتری ذخیره نشده!")
         return
-    text = "📋 لیست چپترها:\n" + "\n".join([f"• {code} ({type})" for code, type in files])
+    text = "📋 لیست چپترها:\n" + "\n".join([f"• {code} ({type})" for code, type, _ in files])
     await message.answer(text)
 
 # ===== حذف چپتر =====
@@ -173,24 +193,20 @@ async def view_feedback(message: types.Message):
     if not feedbacks:
         await message.answer("❌ نظری ثبت نشده!")
         return
-    
     text = "💬 لیست نظرات:\n\n"
     for id, user_id, msg, date in feedbacks[:10]:
         text += f"#{id} | کاربر {user_id}\n{msg}\n{date}\n---\n"
-    
     if len(feedbacks) > 10:
         text += f"\n... و {len(feedbacks) - 10} نظر دیگه"
-    
     await message.answer(text)
 
-# ===== سوالات =====
+# ===== سوالات با ارسال خودکار پاسخ =====
 @router.message(lambda m: m.text == "❓ سوالات" and m.from_user.id == ADMIN_ID)
 async def view_questions(message: types.Message):
     questions = get_pending_questions()
     if not questions:
         await message.answer("❌ سوال بدون پاسخی وجود نداره!")
         return
-    
     for id, user_id, q, date in questions[:5]:
         keyboard = types.InlineKeyboardMarkup(
             inline_keyboard=[
@@ -198,12 +214,19 @@ async def view_questions(message: types.Message):
             ]
         )
         await message.answer(
-            f"❓ سوال #{id}\nاز کاربر {user_id}\n{q}\n{date}",
+            f"❓ سوال #{id}\nاز کاربر {user_id}\nنام: {await get_user_name(user_id)}\n{q}\n{date}",
             reply_markup=keyboard
         )
-    
     if len(questions) > 5:
         await message.answer(f"... و {len(questions) - 5} سوال دیگه")
+
+async def get_user_name(user_id):
+    try:
+        from main import bot
+        user = await bot.get_chat(user_id)
+        return user.full_name or "نامشخص"
+    except:
+        return "نامشخص"
 
 @router.callback_query(lambda c: c.data.startswith("answer_"))
 async def answer_question_start(call: types.CallbackQuery):
@@ -217,9 +240,20 @@ async def answer_question_start(call: types.CallbackQuery):
 async def get_answer(message: types.Message):
     question_id = user_states[message.from_user.id].get("question_id")
     answer = message.text
+    
+    # گرفتن user_id سوال
+    question_data = get_question_data(question_id)
+    if question_data:
+        user_id = question_data[0]
+        try:
+            # ارسال پاسخ به کاربر
+            await message.bot.send_message(user_id, f"✅ پاسخ سوال شما:\n\n{answer}")
+        except:
+            pass
+    
     answer_question(question_id, answer)
     user_states[message.from_user.id] = {}
-    await message.answer("✅ پاسخ ذخیره شد!")
+    await message.answer("✅ پاسخ ذخیره و برای کاربر ارسال شد!")
 
 # ===== ارسال همگانی =====
 @router.message(lambda m: m.text == "📢 ارسال همگانی" and m.from_user.id == ADMIN_ID)
@@ -234,7 +268,6 @@ async def broadcast_start(message: types.Message):
     )
     await message.answer("📢 نوع ارسال رو انتخاب کن:", reply_markup=keyboard)
 
-# ===== ارسال فوری =====
 @router.message(lambda m: m.text == "📤 ارسال فوری" and m.from_user.id == ADMIN_ID)
 async def broadcast_immediate(message: types.Message):
     user_states[message.from_user.id] = {"state": "waiting_broadcast_immediate"}
@@ -246,10 +279,8 @@ async def send_broadcast_immediate(message: types.Message):
     if not users:
         await message.answer("❌ کاربری وجود نداره!")
         return
-    
     user_states[message.from_user.id] = {}
     await message.answer(f"📤 ارسال به {len(users)} کاربر شروع شد...")
-    
     success = 0
     for user_id in users:
         try:
@@ -258,10 +289,8 @@ async def send_broadcast_immediate(message: types.Message):
             await asyncio.sleep(0.05)
         except:
             pass
-    
     await message.answer(f"✅ پیام به {success} کاربر ارسال شد!")
 
-# ===== زمان‌بندی شده =====
 @router.message(lambda m: m.text == "⏰ زمان‌بندی شده" and m.from_user.id == ADMIN_ID)
 async def broadcast_scheduled(message: types.Message):
     user_states[message.from_user.id] = {"state": "waiting_scheduled_time"}
