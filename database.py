@@ -6,13 +6,13 @@ db = sqlite3.connect("bot.db", check_same_thread=False)
 c = db.cursor()
 
 # ===== ساخت جدول‌ها =====
-c.execute("CREATE TABLE IF NOT EXISTS files (code TEXT PRIMARY KEY, file_id TEXT, type TEXT, downloads INTEGER DEFAULT 0)")
+c.execute("CREATE TABLE IF NOT EXISTS files (code TEXT PRIMARY KEY, file_id TEXT, type TEXT, caption TEXT, downloads INTEGER DEFAULT 0)")
 c.execute("CREATE TABLE IF NOT EXISTS channels (username TEXT PRIMARY KEY)")
 c.execute("CREATE TABLE IF NOT EXISTS banner (text TEXT, expire_date TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, join_date TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, message TEXT, date TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, question TEXT, answer TEXT, date TEXT, status TEXT)")
-c.execute("CREATE TABLE IF NOT EXISTS broadcast (id INTEGER PRIMARY KEY AUTOINCREMENT, message TEXT, date TEXT, status TEXT)")  # جدید
+c.execute("CREATE TABLE IF NOT EXISTS broadcast (id INTEGER PRIMARY KEY AUTOINCREMENT, message TEXT, date TEXT, status TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, theme TEXT DEFAULT 'light')")
 db.commit()
 
@@ -22,12 +22,13 @@ for ch in DEFAULT_CHANNELS:
 db.commit()
 
 # ===== توابع فایل‌ها =====
-def save_file(code, file_id, file_type="document"):
-    c.execute("INSERT OR REPLACE INTO files (code, file_id, type) VALUES (?,?,?)", (code, file_id, file_type))
+def save_file(code, file_id, file_type="document", caption=""):
+    c.execute("INSERT OR REPLACE INTO files (code, file_id, type, caption) VALUES (?,?,?,?)", 
+              (code, file_id, file_type, caption))
     db.commit()
 
 def find_file(code):
-    c.execute("SELECT file_id, type FROM files WHERE code=?", (code,))
+    c.execute("SELECT file_id, type, caption FROM files WHERE code=?", (code,))
     row = c.fetchone()
     return row if row else None
 
@@ -36,7 +37,7 @@ def delete_file(code):
     db.commit()
 
 def get_all_files():
-    c.execute("SELECT code, type FROM files")
+    c.execute("SELECT code, type, caption FROM files")
     return c.fetchall()
 
 def increment_download(code):
@@ -99,12 +100,17 @@ def get_all_feedback():
 
 # ===== توابع سوالات =====
 def add_question(user_id, question):
-    c.execute("INSERT INTO questions (user_id, question, date, status) VALUES (?,?,?,?)", (user_id, question, datetime.now().isoformat(), "pending"))
+    c.execute("INSERT INTO questions (user_id, question, date, status) VALUES (?,?,?,?)", 
+              (user_id, question, datetime.now().isoformat(), "pending"))
     db.commit()
 
 def get_pending_questions():
     c.execute("SELECT id, user_id, question, date FROM questions WHERE status='pending'")
     return c.fetchall()
+
+def get_question_data(id):
+    c.execute("SELECT user_id, question FROM questions WHERE id=?", (id,))
+    return c.fetchone()
 
 def answer_question(id, answer):
     c.execute("UPDATE questions SET answer=?, status='answered' WHERE id=?", (answer, id))
@@ -120,7 +126,7 @@ def get_user_theme(user_id):
     row = c.fetchone()
     return row[0] if row else "light"
 
-# ===== توابع زمان‌بندی (جدید) =====
+# ===== توابع زمان‌بندی =====
 def add_scheduled_broadcast(message, send_date, status="pending"):
     c.execute("INSERT INTO broadcast (message, date, status) VALUES (?,?,?)", (message, send_date, status))
     db.commit()
