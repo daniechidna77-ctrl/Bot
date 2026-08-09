@@ -1,5 +1,4 @@
 import sqlite3
-import json
 from datetime import datetime
 from config import DEFAULT_CHANNELS
 
@@ -13,7 +12,7 @@ c.execute("CREATE TABLE IF NOT EXISTS banner (text TEXT, expire_date TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, join_date TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, message TEXT, date TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, question TEXT, answer TEXT, date TEXT, status TEXT)")
-c.execute("CREATE TABLE IF NOT EXISTS broadcast (id INTEGER PRIMARY KEY AUTOINCREMENT, message TEXT, date TEXT, status TEXT)")
+c.execute("CREATE TABLE IF NOT EXISTS broadcast (id INTEGER PRIMARY KEY AUTOINCREMENT, message TEXT, date TEXT, status TEXT)")  # جدید
 c.execute("CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, theme TEXT DEFAULT 'light')")
 db.commit()
 
@@ -98,10 +97,6 @@ def get_all_feedback():
     c.execute("SELECT id, user_id, message, date FROM feedback ORDER BY date DESC")
     return c.fetchall()
 
-def delete_feedback(id):
-    c.execute("DELETE FROM feedback WHERE id=?", (id,))
-    db.commit()
-
 # ===== توابع سوالات =====
 def add_question(user_id, question):
     c.execute("INSERT INTO questions (user_id, question, date, status) VALUES (?,?,?,?)", (user_id, question, datetime.now().isoformat(), "pending"))
@@ -115,10 +110,6 @@ def answer_question(id, answer):
     c.execute("UPDATE questions SET answer=?, status='answered' WHERE id=?", (answer, id))
     db.commit()
 
-def get_user_questions(user_id):
-    c.execute("SELECT question, answer, status FROM questions WHERE user_id=? ORDER BY date DESC", (user_id,))
-    return c.fetchall()
-
 # ===== توابع تنظیمات کاربر =====
 def set_user_theme(user_id, theme):
     c.execute("INSERT OR REPLACE INTO user_settings (user_id, theme) VALUES (?,?)", (user_id, theme))
@@ -129,7 +120,7 @@ def get_user_theme(user_id):
     row = c.fetchone()
     return row[0] if row else "light"
 
-# ===== توابع زمان‌بندی =====
+# ===== توابع زمان‌بندی (جدید) =====
 def add_scheduled_broadcast(message, send_date, status="pending"):
     c.execute("INSERT INTO broadcast (message, date, status) VALUES (?,?,?)", (message, send_date, status))
     db.commit()
