@@ -1,42 +1,12 @@
 from aiogram import Router, types
 from aiogram.filters import CommandStart, Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMIN_ID
 from database import *
 import asyncio
 
 router = Router()
 user_states = {}
-
-# ===== کیبورد شیشه‌ای (پنل ادمین) =====
-def admin_panel_keyboard():
-    buttons = [
-        [KeyboardButton(text="➕ افزودن چپتر")],
-        [KeyboardButton(text="📋 لیست چپترها")],
-        [KeyboardButton(text="🗑 حذف چپتر")],
-        [KeyboardButton(text="➕ افزودن کانال")],
-        [KeyboardButton(text="➖ حذف کانال")],
-        [KeyboardButton(text="📋 لیست کانال‌ها")],
-        [KeyboardButton(text="📝 تنظیم بنر")],
-        [KeyboardButton(text="🗑 حذف بنر")],
-        [KeyboardButton(text="📊 آمار")],
-        [KeyboardButton(text="📢 ارسال همگانی")],
-        [KeyboardButton(text="💬 نظرات")],
-        [KeyboardButton(text="❓ سوالات")],
-        [KeyboardButton(text="🎨 تغییر تم")],
-        [KeyboardButton(text="🔙 بستن پنل")]
-    ]
-    return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
-
-# ===== دکمه‌های عضویت (Inline) =====
-def join_keyboard(channels):
-    buttons = []
-    for ch in channels:
-        buttons.append([InlineKeyboardButton(text=f"📢 عضویت در @{ch}", url=f"https://t.me/{ch}")])
-    if len(channels) > 1:
-        buttons.append([InlineKeyboardButton(text="🔗 عضویت در همه کانال‌ها", callback_data="join_all")])
-    buttons.append([InlineKeyboardButton(text="✅ عضو شدم", callback_data="check_mem")])
-    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # ===== منوی کاربر =====
 def user_menu_keyboard():
@@ -50,6 +20,16 @@ def user_menu_keyboard():
         [InlineKeyboardButton(text="📤 دعوت به ربات", callback_data="share_bot")]
     ])
     return keyboard
+
+# ===== دکمه‌های عضویت =====
+def join_keyboard(channels):
+    buttons = []
+    for ch in channels:
+        buttons.append([InlineKeyboardButton(text=f"📢 عضویت در @{ch}", url=f"https://t.me/{ch}")])
+    if len(channels) > 1:
+        buttons.append([InlineKeyboardButton(text="🔗 عضویت در همه کانال‌ها", callback_data="join_all")])
+    buttons.append([InlineKeyboardButton(text="✅ عضو شدم", callback_data="check_mem")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # ===== چک کردن عضویت =====
 async def is_member(bot, user_id):
@@ -87,7 +67,6 @@ async def start(message: types.Message):
     args = message.text.split()
     banner = get_banner()
     add_user(message.from_user.id)
-    theme = get_user_theme(message.from_user.id)
     
     if len(args) == 1:
         await message.answer(
@@ -144,7 +123,6 @@ async def join_all(call: types.CallbackQuery):
     if not channels:
         await call.answer("❌ کانالی وجود نداره!", show_alert=True)
         return
-    
     links = "\n".join([f"• @{ch}" for ch in channels])
     await call.message.edit_text(
         f"🔗 برای عضویت در همه کانال‌ها روی لینک‌ها کلیک کن:\n\n{links}\n\n✅ بعد از عضویت، روی «عضو شدم» کلیک کن."
@@ -221,7 +199,7 @@ async def change_theme_start(call: types.CallbackQuery):
     await call.message.edit_text(f"✅ تم به {emoji} {'شب' if new_theme == 'dark' else 'روز'} تغییر کرد!")
 
 # ===== اشتراک‌گذاری چپتر =====
-@router.callback_query(lambda c: c.data.startswith("share_") and not c.data == "share_bot")
+@router.callback_query(lambda c: c.data.startswith("share_") and c.data != "share_bot")
 async def share_chapter(call: types.CallbackQuery):
     code = call.data.split("_")[1]
     bot_username = (await call.bot.get_me()).username
@@ -230,7 +208,7 @@ async def share_chapter(call: types.CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📤 اشتراک‌گذاری در تلگرام", url=f"https://t.me/share/url?url={share_link}&text=📖 چپتر {code} رو دریافت کن!")],
         [InlineKeyboardButton(text="📋 کپی لینک", callback_data=f"copy_{code}")],
-        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="back_menu")]
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu")]
     ])
     
     await call.message.edit_text(
@@ -279,10 +257,9 @@ async def share_bot(call: types.CallbackQuery):
 # ===== کپی لینک ربات =====
 @router.callback_query(lambda c: c.data == "copy_bot_link")
 async def copy_bot_link(call: types.CallbackQuery):
-    bot_username = (await call.bot.get_me()).username
     await call.answer(f"✅ لینک ربات کپی شد!", show_alert=True)
 
 # ===== دکمه برگشت به منو =====
-@router.callback_query(lambda c: c.data == "back_menu" or c.data == "menu")
+@router.callback_query(lambda c: c.data == "menu")
 async def back_menu(call: types.CallbackQuery):
     await call.message.edit_text("📋 منوی اصلی:", reply_markup=user_menu_keyboard())
