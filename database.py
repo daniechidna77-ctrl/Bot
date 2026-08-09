@@ -1,5 +1,5 @@
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from config import DEFAULT_CHANNELS
 
 db = sqlite3.connect("bot.db", check_same_thread=False)
@@ -13,8 +13,7 @@ c.execute("CREATE TABLE IF NOT EXISTS users (user_id INTEGER PRIMARY KEY, join_d
 c.execute("CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, message TEXT, date TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, question TEXT, answer TEXT, date TEXT, status TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS broadcast (id INTEGER PRIMARY KEY AUTOINCREMENT, message TEXT, date TEXT, status TEXT)")
-c.execute("CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, theme TEXT DEFAULT 'light')")
-c.execute("CREATE TABLE IF NOT EXISTS ratings (code TEXT, user_id INTEGER, rating INTEGER, date TEXT, PRIMARY KEY (code, user_id))")
+c.execute("CREATE TABLE IF NOT EXISTS reaction_post (id INTEGER PRIMARY KEY AUTOINCREMENT, post_link TEXT)")
 db.commit()
 
 # ===== اضافه کردن کانال‌های پیش‌فرض =====
@@ -58,7 +57,7 @@ def get_channels():
     c.execute("SELECT username FROM channels")
     return [row[0] for row in c.fetchall()]
 
-# ===== توابع بنر =====
+# ===== توابع بنر (با زمان) =====
 def set_banner(text, expire_date=None):
     c.execute("DELETE FROM banner")
     c.execute("INSERT INTO banner VALUES (?,?)", (text, expire_date))
@@ -117,16 +116,6 @@ def answer_question(id, answer):
     c.execute("UPDATE questions SET answer=?, status='answered' WHERE id=?", (answer, id))
     db.commit()
 
-# ===== توابع تنظیمات کاربر =====
-def set_user_theme(user_id, theme):
-    c.execute("INSERT OR REPLACE INTO user_settings (user_id, theme) VALUES (?,?)", (user_id, theme))
-    db.commit()
-
-def get_user_theme(user_id):
-    c.execute("SELECT theme FROM user_settings WHERE user_id=?", (user_id,))
-    row = c.fetchone()
-    return row[0] if row else "light"
-
 # ===== توابع زمان‌بندی =====
 def add_scheduled_broadcast(message, send_date, status="pending"):
     c.execute("INSERT INTO broadcast (message, date, status) VALUES (?,?,?)", (message, send_date, status))
@@ -140,17 +129,13 @@ def update_broadcast_status(id, status):
     c.execute("UPDATE broadcast SET status=? WHERE id=?", (status, id))
     db.commit()
 
-# ===== توابع امتیازدهی =====
-def save_rating(code, user_id, rating):
-    c.execute("INSERT OR REPLACE INTO ratings (code, user_id, rating, date) VALUES (?,?,?,?)", 
-              (code, user_id, rating, datetime.now().isoformat()))
+# ===== توابع ری اکشن پست =====
+def set_reaction_post(post_link):
+    c.execute("DELETE FROM reaction_post")
+    c.execute("INSERT INTO reaction_post (post_link) VALUES (?)", (post_link,))
     db.commit()
 
-def get_rating(code):
-    c.execute("SELECT AVG(rating) FROM ratings WHERE code=?", (code,))
+def get_reaction_post():
+    c.execute("SELECT post_link FROM reaction_post ORDER BY id DESC LIMIT 1")
     row = c.fetchone()
-    return round(row[0], 1) if row and row[0] else 0
-
-def get_rating_count(code):
-    c.execute("SELECT COUNT(*) FROM ratings WHERE code=?", (code,))
-    return c.fetchone()[0]
+    return row[0] if row else None
