@@ -21,7 +21,7 @@ async def panel(message: types.Message):
             [KeyboardButton(text="📝 تنظیم بنر"), KeyboardButton(text="🗑 حذف بنر")],
             [KeyboardButton(text="📊 آمار"), KeyboardButton(text="📢 ارسال همگانی")],
             [KeyboardButton(text="💬 نظرات"), KeyboardButton(text="❓ سوالات")],
-            [KeyboardButton(text="🎨 تغییر تم"), KeyboardButton(text="🔙 بستن پنل")]
+            [KeyboardButton(text="🔙 بستن پنل")]
         ],
         resize_keyboard=True
     )
@@ -172,14 +172,11 @@ async def view_feedback(message: types.Message):
     if not feedbacks:
         await message.answer("❌ نظری ثبت نشده!")
         return
-    
     text = "💬 لیست نظرات:\n\n"
     for id, user_id, msg, date in feedbacks[:10]:
         text += f"#{id} | کاربر {user_id}\n{msg}\n{date}\n---\n"
-    
     if len(feedbacks) > 10:
         text += f"\n... و {len(feedbacks) - 10} نظر دیگه"
-    
     await message.answer(text)
 
 # ===== سوالات =====
@@ -189,7 +186,6 @@ async def view_questions(message: types.Message):
     if not questions:
         await message.answer("❌ سوال بدون پاسخی وجود نداره!")
         return
-    
     for id, user_id, q, date in questions[:5]:
         keyboard = types.InlineKeyboardMarkup(
             inline_keyboard=[
@@ -200,7 +196,6 @@ async def view_questions(message: types.Message):
             f"❓ سوال #{id}\nاز کاربر {user_id}\n{q}\n{date}",
             reply_markup=keyboard
         )
-    
     if len(questions) > 5:
         await message.answer(f"... و {len(questions) - 5} سوال دیگه")
 
@@ -245,10 +240,8 @@ async def send_broadcast_immediate(message: types.Message):
     if not users:
         await message.answer("❌ کاربری وجود نداره!")
         return
-    
     user_states[message.from_user.id] = {}
     await message.answer(f"📤 ارسال به {len(users)} کاربر شروع شد...")
-    
     success = 0
     for user_id in users:
         try:
@@ -257,10 +250,21 @@ async def send_broadcast_immediate(message: types.Message):
             await asyncio.sleep(0.05)
         except:
             pass
-    
     await message.answer(f"✅ پیام به {success} کاربر ارسال شد!")
 
 # ===== زمان‌بندی شده =====
 @router.message(lambda m: m.text == "⏰ زمان‌بندی شده" and m.from_user.id == ADMIN_ID)
 async def broadcast_scheduled(message: types.Message):
-    user_states[message.from_user
+    user_states[message.from_user.id] = {"state": "waiting_scheduled_time"}
+    await message.answer("⏰ تاریخ و زمان رو به فرمت زیر بفرست:\n\n`1402-08-15 20:30`")
+
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_scheduled_time")
+async def get_scheduled_time(message: types.Message):
+    user_states[message.from_user.id] = {"state": "waiting_scheduled_message", "time": message.text.strip()}
+    await message.answer(f"⏰ زمان ثبت شد: {message.text}\n\n📝 حالا پیام رو بفرست:")
+
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_scheduled_message")
+async def send_scheduled_broadcast(message: types.Message):
+    add_scheduled_broadcast(message.text, user_states[message.from_user.id].get("time"), "pending")
+    user_states[message.from_user.id] = {}
+    await message.answer("⏰ پیام در زمان مشخص شده ارسال خواهد شد!")
