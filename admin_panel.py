@@ -3,12 +3,13 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from config import ADMIN_ID
 from database import *
 import asyncio
+from datetime import datetime
 
 router = Router()
 user_states = {}
 
 # ===== پنل ادمین =====
-@router.message(lambda m: m.text == "⚙️ پنل مدیریت" or m.text == "/panel")
+@router.message(Command("panel"))
 async def panel(message: types.Message):
     if message.from_user.id != ADMIN_ID:
         return
@@ -20,7 +21,7 @@ async def panel(message: types.Message):
             [KeyboardButton(text="📝 تنظیم بنر"), KeyboardButton(text="🗑 حذف بنر")],
             [KeyboardButton(text="📊 آمار"), KeyboardButton(text="📢 ارسال همگانی")],
             [KeyboardButton(text="💬 نظرات"), KeyboardButton(text="❓ سوالات")],
-            [KeyboardButton(text="🎨 تغییر تم پیش‌فرض"), KeyboardButton(text="🔙 بستن پنل")]
+            [KeyboardButton(text="🎨 تغییر تم"), KeyboardButton(text="🔙 بستن پنل")]
         ],
         resize_keyboard=True
     )
@@ -46,12 +47,12 @@ async def get_code(message: types.Message):
 async def get_file(message: types.Message):
     state = user_states.get(message.from_user.id, {})
     if state.get("state") != "waiting_file":
+        await message.answer("❌ لطفاً اول از گزینه افزودن چپتر استفاده کن!")
         return
     code = state.get("code")
     if not code:
         return
     
-    # تشخیص نوع فایل
     file_type = "document"
     if message.document.mime_type == "application/pdf":
         file_type = "document"
@@ -173,7 +174,7 @@ async def view_feedback(message: types.Message):
         return
     
     text = "💬 لیست نظرات:\n\n"
-    for id, user_id, msg, date in feedbacks[:10]:  # 10 تا آخرین
+    for id, user_id, msg, date in feedbacks[:10]:
         text += f"#{id} | کاربر {user_id}\n{msg}\n{date}\n---\n"
     
     if len(feedbacks) > 10:
@@ -222,11 +223,24 @@ async def get_answer(message: types.Message):
 # ===== ارسال همگانی =====
 @router.message(lambda m: m.text == "📢 ارسال همگانی" and m.from_user.id == ADMIN_ID)
 async def broadcast_start(message: types.Message):
-    user_states[message.from_user.id] = {"state": "waiting_broadcast"}
-    await message.answer("📝 پیام رو بفرست تا به همه کاربرا برسه:")
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📤 ارسال فوری")],
+            [KeyboardButton(text="⏰ زمان‌بندی شده")],
+            [KeyboardButton(text="🔙 بستن پنل")]
+        ],
+        resize_keyboard=True
+    )
+    await message.answer("📢 نوع ارسال رو انتخاب کن:", reply_markup=keyboard)
 
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_broadcast")
-async def send_broadcast(message: types.Message):
+# ===== ارسال فوری =====
+@router.message(lambda m: m.text == "📤 ارسال فوری" and m.from_user.id == ADMIN_ID)
+async def broadcast_immediate(message: types.Message):
+    user_states[message.from_user.id] = {"state": "waiting_broadcast_immediate"}
+    await message.answer("📝 پیام رو بفرست تا فوری به همه برسه:")
+
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_broadcast_immediate")
+async def send_broadcast_immediate(message: types.Message):
     users = get_all_users()
     if not users:
         await message.answer("❌ کاربری وجود نداره!")
@@ -240,21 +254,13 @@ async def send_broadcast(message: types.Message):
         try:
             await message.bot.send_message(user_id, message.text)
             success += 1
-            await asyncio.sleep(0.05)  # جلوگیری از محدودیت
+            await asyncio.sleep(0.05)
         except:
             pass
     
     await message.answer(f"✅ پیام به {success} کاربر ارسال شد!")
 
-# ===== تغییر تم پیش‌فرض =====
-@router.message(lambda m: m.text == "🎨 تغییر تم پیش‌فرض" and m.from_user.id == ADMIN_ID)
-async def change_default_theme(message: types.Message):
-    # اینجا می‌تونی تم پیش‌فرض رو تغییر بدی
-    await message.answer("🎨 تم پیش‌فرض برای کاربران جدید:\nلطفاً انتخاب کن:\n☀️ روز\n🌙 شب", 
-                        reply_markup=types.ReplyKeyboardMarkup(
-                            keyboard=[
-                                [KeyboardButton(text="☀️ روز"), KeyboardButton(text="🌙 شب")],
-                                [KeyboardButton(text="🔙 بستن پنل")]
-                            ],
-                            resize_keyboard=True
-                        ))
+# ===== زمان‌بندی شده =====
+@router.message(lambda m: m.text == "⏰ زمان‌بندی شده" and m.from_user.id == ADMIN_ID)
+async def broadcast_scheduled(message: types.Message):
+    user_states[message.from_user
