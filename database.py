@@ -67,7 +67,6 @@ def get_banner():
     c.execute("SELECT text, expire_date FROM banner")
     row = c.fetchone()
     if row:
-        # چک کردن انقضا
         if row[1] and datetime.now().isoformat() > row[1]:
             return "📢 به ربات خوش اومدی!"
         return row[0]
@@ -129,3 +128,16 @@ def get_user_theme(user_id):
     c.execute("SELECT theme FROM user_settings WHERE user_id=?", (user_id,))
     row = c.fetchone()
     return row[0] if row else "light"
+
+# ===== توابع زمان‌بندی =====
+def add_scheduled_broadcast(message, send_date, status="pending"):
+    c.execute("INSERT INTO broadcast (message, date, status) VALUES (?,?,?)", (message, send_date, status))
+    db.commit()
+
+def get_pending_broadcasts():
+    c.execute("SELECT id, message, date FROM broadcast WHERE status='pending'")
+    return c.fetchall()
+
+def update_broadcast_status(id, status):
+    c.execute("UPDATE broadcast SET status=? WHERE id=?", (status, id))
+    db.commit()
