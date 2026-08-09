@@ -2,7 +2,8 @@ from aiogram import Router, types
 from aiogram.filters import CommandStart, Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from config import ADMIN_ID
-from database import find_file, get_channels, add_channel, delete_channel, get_banner, set_banner, save_file, get_all_files, delete_file
+from database import *
+import asyncio
 
 router = Router()
 user_states = {}
@@ -17,7 +18,12 @@ def admin_panel_keyboard():
         [KeyboardButton(text="➖ حذف کانال")],
         [KeyboardButton(text="📋 لیست کانال‌ها")],
         [KeyboardButton(text="📝 تنظیم بنر")],
+        [KeyboardButton(text="🗑 حذف بنر")],
         [KeyboardButton(text="📊 آمار")],
+        [KeyboardButton(text="📢 ارسال همگانی")],
+        [KeyboardButton(text="💬 نظرات")],
+        [KeyboardButton(text="❓ سوالات")],
+        [KeyboardButton(text="🎨 تغییر تم")],
         [KeyboardButton(text="🔙 بستن پنل")]
     ]
     return ReplyKeyboardMarkup(keyboard=buttons, resize_keyboard=True)
@@ -27,8 +33,23 @@ def join_keyboard(channels):
     buttons = []
     for ch in channels:
         buttons.append([InlineKeyboardButton(text=f"📢 عضویت در @{ch}", url=f"https://t.me/{ch}")])
+    # دکمه عضویت در همه کانال‌ها
+    if len(channels) > 1:
+        buttons.append([InlineKeyboardButton(text="🔗 عضویت در همه کانال‌ها", callback_data="join_all")])
     buttons.append([InlineKeyboardButton(text="✅ عضو شدم", callback_data="check_mem")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+# ===== منوی کاربر =====
+def user_menu_keyboard():
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📖 راهنما", callback_data="help")],
+        [InlineKeyboardButton(text="📢 کانال‌ها", callback_data="channels_list")],
+        [InlineKeyboardButton(text="👤 پروفایل", callback_data="profile")],
+        [InlineKeyboardButton(text="💬 نظر یا پیشنهاد", callback_data="feedback")],
+        [InlineKeyboardButton(text="❓ سوال", callback_data="ask_question")],
+        [InlineKeyboardButton(text="🎨 تغییر تم", callback_data="change_theme")]
+    ])
+    return keyboard
 
 # ===== چک کردن عضویت =====
 async def is_member(bot, user_id):
@@ -49,9 +70,13 @@ async def is_member(bot, user_id):
 async def start(message: types.Message):
     args = message.text.split()
     banner = get_banner()
+    add_user(message.from_user.id)  # ذخیره کاربر
     
     if len(args) == 1:
-        await message.answer(f"👋 سلام!\n{banner}")
+        await message.answer(
+            f"👋 سلام {message.from_user.first_name}!\n{banner}",
+            reply_markup=user_menu_keyboard()
+        )
         return
     
     code = args[1]
@@ -65,9 +90,19 @@ async def start(message: types.Message):
         )
         return
     
-    file_id = find_file(code)
-    if file_id:
-        await message.answer_document(file_id, caption=f"📖 {code}")
+    file_info = find_file(code)
+    if file_info:
+        file_id, file_type = file_info
+        increment_download(code)  # افزایش تعداد دانلود
+        
+        if file_type == "document":
+            await message.answer_document(file_id, caption=f"📖 {code}")
+        elif file_type == "photo":
+            await message.answer_photo(file_id, caption=f"📖 {code}")
+        elif file_type == "video":
+            await message.answer_video(file_id, caption=f"📖 {code}")
+        else:
+            await message.answer_document(file_id, caption=f"📖 {code}")
     else:
         await message.answer(f"❌ چپتر {code} پیدا نشد!")
 
@@ -84,32 +119,54 @@ async def check_mem(call: types.CallbackQuery):
         await call.answer("❌ هنوز عضو نشدی!", show_alert=True)
         return
     
-    file_id = find_file(code)
+    file_info = find_file(code)
     await call.message.delete()
-    if file_id:
-        await call.message.answer_document(file_id, caption=f"📖 {code}")
+    if file_info:
+        file_id, file_type = file_info
+        increment_download(code)
+        
+        if file_type == "document":
+            await call.message.answer_document(file_id, caption=f"📖 {code}")
+        elif file_type == "photo":
+            await call.message.answer_photo(file_id, caption=f"📖 {code}")
+        elif file_type == "video":
+            await call.message.answer_video(file_id, caption=f"📖 {code}")
+        else:
+            await call.message.answer_document(file_id, caption=f"📖 {code}")
     else:
         await call.message.answer(f"❌ چپتر {code} پیدا نشد!")
+
+# ===== عضویت در همه کانال‌ها =====
+@router.callback_query(lambda c: c.data == "join_all")
+async def join_all(call: types.CallbackQuery):
+    channels = get_channels()
+    if not channels:
+        await call.answer("❌ کانالی وجود نداره!", show_alert=True)
+        return
+    
+    # ساخت لینک‌های عضویت
+    links = "\n".join([f"• @{ch}" for ch in channels])
+    await call.message.edit_text(
+        f"🔗 برای عضویت در همه کانال‌ها روی لینک‌ها کلیک کن:\n\n{links}\n\n✅ بعد از عضویت، روی «عضو شدم» کلیک کن."
+    )
 
 # ===== منوی کاربر =====
 @router.message(Command("menu"))
 async def menu(message: types.Message):
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📖 راهنما", callback_data="help")],
-        [InlineKeyboardButton(text="📢 کانال‌ها", callback_data="channels_list")],
-        [InlineKeyboardButton(text="👤 پروفایل", callback_data="profile")]
-    ])
-    await message.answer("📋 منوی اصلی:", reply_markup=keyboard)
+    await message.answer("📋 منوی اصلی:", reply_markup=user_menu_keyboard())
 
-# ===== هندلرهای منو =====
+# ===== راهنما =====
 @router.callback_query(lambda c: c.data == "help")
 async def help_menu(call: types.CallbackQuery):
     await call.message.edit_text(
         "📖 راهنما:\n\n"
         "برای دریافت چپتر از لینک مخصوص استفاده کن.\n"
-        "مثال: https://t.me/ربات?start=1_2"
+        "مثال: https://t.me/Yuri199bot?start=1_2\n\n"
+        "🔹 بعد از عضویت در کانال‌ها، فایل برات ارسال میشه.\n"
+        "🔹 می‌تونی از منو برای دسترسی به بخش‌های مختلف استفاده کنی."
     )
 
+# ===== لیست کانال‌ها =====
 @router.callback_query(lambda c: c.data == "channels_list")
 async def channels_list_menu(call: types.CallbackQuery):
     channels = get_channels()
@@ -119,132 +176,49 @@ async def channels_list_menu(call: types.CallbackQuery):
     text = "📢 لیست کانال‌ها:\n" + "\n".join([f"• @{ch}" for ch in channels])
     await call.message.edit_text(text)
 
+# ===== پروفایل =====
 @router.callback_query(lambda c: c.data == "profile")
 async def profile_menu(call: types.CallbackQuery):
+    theme = get_user_theme(call.from_user.id)
     await call.message.edit_text(
         f"👤 پروفایل:\n\n"
         f"آیدی: {call.from_user.id}\n"
-        f"نام: {call.from_user.full_name}"
+        f"نام: {call.from_user.full_name}\n"
+        f"تم: {'🌙 شب' if theme == 'dark' else '☀️ روز'}"
     )
 
-# ===== پنل ادمین (شیشه‌ای) =====
-@router.message(Command("panel"))
-async def panel(message: types.Message):
-    if message.from_user.id != ADMIN_ID:
-        return
-    await message.answer("⚙️ پنل مدیریت:", reply_markup=admin_panel_keyboard())
+# ===== نظر یا پیشنهاد =====
+@router.callback_query(lambda c: c.data == "feedback")
+async def feedback_start(call: types.CallbackQuery):
+    user_states[call.from_user.id] = {"state": "waiting_feedback"}
+    await call.message.edit_text("💬 نظر یا پیشنهادت رو بفرست:")
 
-# ===== بستن پنل =====
-@router.message(lambda m: m.text == "🔙 بستن پنل" and m.from_user.id == ADMIN_ID)
-async def close_panel(message: types.Message):
-    await message.answer("✅ پنل بسته شد!", reply_markup=types.ReplyKeyboardRemove())
-
-# ===== افزودن چپتر =====
-@router.message(lambda m: m.text == "➕ افزودن چپتر" and m.from_user.id == ADMIN_ID)
-async def add_file_start(message: types.Message):
-    user_states[message.from_user.id] = {"state": "waiting_code"}
-    await message.answer("📝 کد چپتر رو بفرست:\nمثال: 1_2")
-
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_code")
-async def get_code(message: types.Message):
-    user_states[message.from_user.id] = {"state": "waiting_pdf", "code": message.text.strip()}
-    await message.answer("📄 حالا PDF رو ارسال کن")
-
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.document)
-async def get_pdf(message: types.Message):
-    state = user_states.get(message.from_user.id, {})
-    if state.get("state") != "waiting_pdf":
-        return
-    code = state.get("code")
-    if not code:
-        return
-    save_file(code, message.document.file_id)
+@router.message(lambda m: m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_feedback")
+async def get_feedback(message: types.Message):
+    add_feedback(message.from_user.id, message.text)
     user_states[message.from_user.id] = {}
-    await message.answer(f"✅ چپتر {code} ذخیره شد!")
+    await message.answer("✅ نظرت با موفقیت ثبت شد! ممنون 🙏")
 
-# ===== لیست چپترها =====
-@router.message(lambda m: m.text == "📋 لیست چپترها" and m.from_user.id == ADMIN_ID)
-async def list_files(message: types.Message):
-    files = get_all_files()
-    if not files:
-        await message.answer("❌ هیچ چپتری ذخیره نشده!")
-        return
-    await message.answer("📋 لیست چپترها:\n" + "\n".join([f"• {f}" for f in files]))
+# ===== سوال =====
+@router.callback_query(lambda c: c.data == "ask_question")
+async def ask_question_start(call: types.CallbackQuery):
+    user_states[call.from_user.id] = {"state": "waiting_question"}
+    await call.message.edit_text("❓ سوالت رو بفرست:")
 
-# ===== حذف چپتر =====
-@router.message(lambda m: m.text == "🗑 حذف چپتر" and m.from_user.id == ADMIN_ID)
-async def delete_file_start(message: types.Message):
-    files = get_all_files()
-    if not files:
-        await message.answer("❌ هیچ چپتری وجود نداره!")
-        return
-    user_states[message.from_user.id] = {"state": "waiting_delete"}
-    await message.answer("📝 کد چپتر رو برای حذف بفرست:")
-
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_delete")
-async def delete_file_confirm(message: types.Message):
-    code = message.text.strip()
-    if find_file(code):
-        delete_file(code)
-        await message.answer(f"✅ چپتر {code} حذف شد!")
-    else:
-        await message.answer(f"❌ چپتر {code} پیدا نشد!")
+@router.message(lambda m: m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_question")
+async def get_question(message: types.Message):
+    add_question(message.from_user.id, message.text)
     user_states[message.from_user.id] = {}
+    await message.answer("✅ سوال شما ثبت شد! به زودی پاسخ داده میشه.")
 
-# ===== افزودن کانال =====
-@router.message(lambda m: m.text == "➕ افزودن کانال" and m.from_user.id == ADMIN_ID)
-async def add_channel_start(message: types.Message):
-    user_states[message.from_user.id] = {"state": "waiting_channel"}
-    await message.answer("📢 نام کاربری کانال رو بفرست (بدون @):")
+# ===== تغییر تم =====
+@router.callback_query(lambda c: c.data == "change_theme")
+async def change_theme_start(call: types.CallbackQuery):
+    current_theme = get_user_theme(call.from_user.id)
+    new_theme = "dark" if current_theme == "light" else "light"
+    set_user_theme(call.from_user.id, new_theme)
+    emoji = "🌙" if new_theme == "dark" else "☀️"
+    await call.message.edit_text(f"✅ تم به {emoji} {'شب' if new_theme == 'dark' else 'روز'} تغییر کرد!")
 
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_channel")
-async def get_channel(message: types.Message):
-    ch = message.text.strip().replace("@", "")
-    add_channel(ch)
-    user_states[message.from_user.id] = {}
-    await message.answer(f"✅ کانال @{ch} اضافه شد!")
-
-# ===== حذف کانال =====
-@router.message(lambda m: m.text == "➖ حذف کانال" and m.from_user.id == ADMIN_ID)
-async def delete_channel_start(message: types.Message):
-    channels = get_channels()
-    if not channels:
-        await message.answer("❌ کانالی وجود نداره!")
-        return
-    user_states[message.from_user.id] = {"state": "waiting_del_channel"}
-    await message.answer("📝 نام کاربری کانال رو برای حذف بفرست:")
-
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_del_channel")
-async def delete_channel_confirm(message: types.Message):
-    ch = message.text.strip().replace("@", "")
-    delete_channel(ch)
-    user_states[message.from_user.id] = {}
-    await message.answer(f"✅ کانال @{ch} حذف شد!")
-
-# ===== لیست کانال‌ها =====
-@router.message(lambda m: m.text == "📋 لیست کانال‌ها" and m.from_user.id == ADMIN_ID)
-async def list_channels(message: types.Message):
-    channels = get_channels()
-    if not channels:
-        await message.answer("❌ کانالی ثبت نشده!")
-        return
-    await message.answer("📋 لیست کانال‌ها:\n" + "\n".join([f"• @{ch}" for ch in channels]))
-
-# ===== تنظیم بنر =====
-@router.message(lambda m: m.text == "📝 تنظیم بنر" and m.from_user.id == ADMIN_ID)
-async def set_banner_start(message: types.Message):
-    user_states[message.from_user.id] = {"state": "waiting_banner"}
-    await message.answer("📝 متن بنر جدید رو بفرست:")
-
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_banner")
-async def get_banner_text(message: types.Message):
-    set_banner(message.text)
-    user_states[message.from_user.id] = {}
-    await message.answer("✅ بنر ذخیره شد!")
-
-# ===== آمار =====
-@router.message(lambda m: m.text == "📊 آمار" and m.from_user.id == ADMIN_ID)
-async def stats(message: types.Message):
-    files = get_all_files()
-    channels = get_channels()
-    await message.answer(f"📊 آمار ربات:\n\n📁 تعداد چپترها: {len(files)}\n📢 تعداد کانال‌ها: {len(channels)}")
+# ===== پنل ادمین (ادامه در فایل بعدی) =====
+# ... (ادمین پنل در فایل admin_panel.py جداگانه)
