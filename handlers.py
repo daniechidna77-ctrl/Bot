@@ -23,13 +23,12 @@ def user_menu_keyboard():
     )
     return keyboard
 
-# ===== دکمه‌های عضویت (اینلاین) =====
+# ===== دکمه‌های عضویت (اینلاین) - بدون "عضویت در همه" =====
 def join_keyboard(channels, post_link=None):
     buttons = []
     for ch in channels:
         buttons.append([InlineKeyboardButton(text=f"📢 عضویت", url=f"https://t.me/{ch}")])
-    if len(channels) > 1:
-        buttons.append([InlineKeyboardButton(text="🔗 عضویت در همه", callback_data="join_all")])
+    # ===== "عضویت در همه" حذف شد =====
     buttons.append([InlineKeyboardButton(text="✅ عضو شدم", callback_data="check_mem")])
     
     if post_link:
@@ -77,10 +76,7 @@ async def send_file_with_share(message, file_id, file_type, code, caption=""):
 
 @router.callback_query(lambda c: c.data and c.data.startswith("share_"))
 async def share_chapter(call: types.CallbackQuery):
-    # گرفتن کد چپتر از callback_data
     code = call.data.replace("share_", "")
-    
-    # گرفتن username ربات
     bot_username = (await call.bot.get_me()).username
     share_link = f"https://t.me/{bot_username}?start={code}"
     
@@ -108,7 +104,6 @@ async def copy_link(call: types.CallbackQuery):
     
     await call.answer(f"✅ لینک کپی شد!", show_alert=True)
     
-    # نمایش لینک برای کپی دستی
     await call.message.edit_text(
         f"📤 **لینک چپتر {code}:**\n\n"
         f"`{share_link}`\n\n"
@@ -147,7 +142,6 @@ async def start(message: types.Message):
     code = args[1]
     user_states[message.from_user.id] = {"code": code}
     
-    # چک کردن عضویت
     channels = get_channels()
     if channels:
         if not await is_member(message.bot, message.from_user.id):
@@ -158,7 +152,6 @@ async def start(message: types.Message):
             )
             return
     
-    # دریافت فایل
     file_info = find_file(code)
     if file_info:
         file_id, file_type, caption = file_info
@@ -191,23 +184,6 @@ async def check_mem(call: types.CallbackQuery):
         await send_file_with_share(call.message, file_id, file_type, code, caption or "")
     else:
         await call.message.answer(f"❌ چپتر {code} پیدا نشد! 😅")
-
-# ========================================
-# ===== عضویت در همه =====
-# ========================================
-
-@router.callback_query(lambda c: c.data == "join_all")
-async def join_all(call: types.CallbackQuery):
-    channels = get_channels()
-    if not channels:
-        await call.answer("❌ کانالی وجود نداره!", show_alert=True)
-        return
-    links = "\n".join([f"• @{ch}" for ch in channels])
-    await call.message.edit_text(
-        f"🔗 **برای عضویت در همه کانال‌ها:**\n\n"
-        f"{links}\n\n"
-        f"✅ بعد از عضویت، بزن **عضو شدم**!"
-    )
 
 # ========================================
 # ===== منوی کاربر =====
