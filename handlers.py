@@ -33,7 +33,6 @@ def join_keyboard(channels):
     buttons = []
     for ch in channels:
         buttons.append([InlineKeyboardButton(text=f"📢 عضویت در @{ch}", url=f"https://t.me/{ch}")])
-    # دکمه عضویت در همه کانال‌ها
     if len(channels) > 1:
         buttons.append([InlineKeyboardButton(text="🔗 عضویت در همه کانال‌ها", callback_data="join_all")])
     buttons.append([InlineKeyboardButton(text="✅ عضو شدم", callback_data="check_mem")])
@@ -47,7 +46,8 @@ def user_menu_keyboard():
         [InlineKeyboardButton(text="👤 پروفایل", callback_data="profile")],
         [InlineKeyboardButton(text="💬 نظر یا پیشنهاد", callback_data="feedback")],
         [InlineKeyboardButton(text="❓ سوال", callback_data="ask_question")],
-        [InlineKeyboardButton(text="🎨 تغییر تم", callback_data="change_theme")]
+        [InlineKeyboardButton(text="🎨 تغییر تم", callback_data="change_theme")],
+        [InlineKeyboardButton(text="📤 دعوت به ربات", callback_data="share_bot")]
     ])
     return keyboard
 
@@ -65,12 +65,29 @@ async def is_member(bot, user_id):
             return False
     return True
 
+# ===== ارسال فایل با دکمه اشتراک‌گذاری =====
+async def send_file_with_share(message, file_id, file_type, code):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 اشتراک‌گذاری چپتر", callback_data=f"share_{code}")],
+        [InlineKeyboardButton(text="📋 منو", callback_data="menu")]
+    ])
+    
+    if file_type == "document":
+        await message.answer_document(file_id, caption=f"📖 چپتر {code}", reply_markup=keyboard)
+    elif file_type == "photo":
+        await message.answer_photo(file_id, caption=f"📖 چپتر {code}", reply_markup=keyboard)
+    elif file_type == "video":
+        await message.answer_video(file_id, caption=f"📖 چپتر {code}", reply_markup=keyboard)
+    else:
+        await message.answer_document(file_id, caption=f"📖 چپتر {code}", reply_markup=keyboard)
+
 # ===== استارت =====
 @router.message(CommandStart())
 async def start(message: types.Message):
     args = message.text.split()
     banner = get_banner()
-    add_user(message.from_user.id)  # ذخیره کاربر
+    add_user(message.from_user.id)
+    theme = get_user_theme(message.from_user.id)
     
     if len(args) == 1:
         await message.answer(
@@ -93,16 +110,8 @@ async def start(message: types.Message):
     file_info = find_file(code)
     if file_info:
         file_id, file_type = file_info
-        increment_download(code)  # افزایش تعداد دانلود
-        
-        if file_type == "document":
-            await message.answer_document(file_id, caption=f"📖 {code}")
-        elif file_type == "photo":
-            await message.answer_photo(file_id, caption=f"📖 {code}")
-        elif file_type == "video":
-            await message.answer_video(file_id, caption=f"📖 {code}")
-        else:
-            await message.answer_document(file_id, caption=f"📖 {code}")
+        increment_download(code)
+        await send_file_with_share(message, file_id, file_type, code)
     else:
         await message.answer(f"❌ چپتر {code} پیدا نشد!")
 
@@ -124,15 +133,7 @@ async def check_mem(call: types.CallbackQuery):
     if file_info:
         file_id, file_type = file_info
         increment_download(code)
-        
-        if file_type == "document":
-            await call.message.answer_document(file_id, caption=f"📖 {code}")
-        elif file_type == "photo":
-            await call.message.answer_photo(file_id, caption=f"📖 {code}")
-        elif file_type == "video":
-            await call.message.answer_video(file_id, caption=f"📖 {code}")
-        else:
-            await call.message.answer_document(file_id, caption=f"📖 {code}")
+        await send_file_with_share(call.message, file_id, file_type, code)
     else:
         await call.message.answer(f"❌ چپتر {code} پیدا نشد!")
 
@@ -144,7 +145,6 @@ async def join_all(call: types.CallbackQuery):
         await call.answer("❌ کانالی وجود نداره!", show_alert=True)
         return
     
-    # ساخت لینک‌های عضویت
     links = "\n".join([f"• @{ch}" for ch in channels])
     await call.message.edit_text(
         f"🔗 برای عضویت در همه کانال‌ها روی لینک‌ها کلیک کن:\n\n{links}\n\n✅ بعد از عضویت، روی «عضو شدم» کلیک کن."
@@ -220,5 +220,69 @@ async def change_theme_start(call: types.CallbackQuery):
     emoji = "🌙" if new_theme == "dark" else "☀️"
     await call.message.edit_text(f"✅ تم به {emoji} {'شب' if new_theme == 'dark' else 'روز'} تغییر کرد!")
 
-# ===== پنل ادمین (ادامه در فایل بعدی) =====
-# ... (ادمین پنل در فایل admin_panel.py جداگانه)
+# ===== اشتراک‌گذاری چپتر =====
+@router.callback_query(lambda c: c.data.startswith("share_") and not c.data == "share_bot")
+async def share_chapter(call: types.CallbackQuery):
+    code = call.data.split("_")[1]
+    bot_username = (await call.bot.get_me()).username
+    share_link = f"https://t.me/{bot_username}?start={code}"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 اشتراک‌گذاری در تلگرام", url=f"https://t.me/share/url?url={share_link}&text=📖 چپتر {code} رو دریافت کن!")],
+        [InlineKeyboardButton(text="📋 کپی لینک", callback_data=f"copy_{code}")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="back_menu")]
+    ])
+    
+    await call.message.edit_text(
+        f"📤 لینک اشتراک‌گذاری چپتر {code}:\n\n"
+        f"`{share_link}`\n\n"
+        f"این لینک رو برای دوستانت بفرست تا چپتر رو دریافت کنن.",
+        reply_markup=keyboard
+    )
+
+# ===== کپی لینک چپتر =====
+@router.callback_query(lambda c: c.data.startswith("copy_"))
+async def copy_link(call: types.CallbackQuery):
+    code = call.data.split("_")[1]
+    bot_username = (await call.bot.get_me()).username
+    share_link = f"https://t.me/{bot_username}?start={code}"
+    
+    await call.answer(f"✅ لینک کپی شد!", show_alert=True)
+    await call.message.edit_text(
+        f"📤 لینک چپتر {code}:\n\n"
+        f"`{share_link}`\n\n"
+        f"لینک رو کپی کن و برای دوستانت بفرست.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"share_{code}")]
+        ])
+    )
+
+# ===== دعوت به ربات =====
+@router.callback_query(lambda c: c.data == "share_bot")
+async def share_bot(call: types.CallbackQuery):
+    bot_username = (await call.bot.get_me()).username
+    share_link = f"https://t.me/{bot_username}"
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📤 دعوت به ربات", url=f"https://t.me/share/url?url={share_link}&text=🤖 به این ربات بپیوند!")],
+        [InlineKeyboardButton(text="📋 کپی لینک", callback_data="copy_bot_link")],
+        [InlineKeyboardButton(text="🔙 بازگشت", callback_data="menu")]
+    ])
+    
+    await call.message.edit_text(
+        f"🤖 لینک ربات:\n\n"
+        f"`{share_link}`\n\n"
+        f"دوستانت رو به ربات دعوت کن!",
+        reply_markup=keyboard
+    )
+
+# ===== کپی لینک ربات =====
+@router.callback_query(lambda c: c.data == "copy_bot_link")
+async def copy_bot_link(call: types.CallbackQuery):
+    bot_username = (await call.bot.get_me()).username
+    await call.answer(f"✅ لینک ربات کپی شد!", show_alert=True)
+
+# ===== دکمه برگشت به منو =====
+@router.callback_query(lambda c: c.data == "back_menu" or c.data == "menu")
+async def back_menu(call: types.CallbackQuery):
+    await call.message.edit_text("📋 منوی اصلی:", reply_markup=user_menu_keyboard())
