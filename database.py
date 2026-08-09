@@ -14,6 +14,7 @@ c.execute("CREATE TABLE IF NOT EXISTS feedback (id INTEGER PRIMARY KEY AUTOINCRE
 c.execute("CREATE TABLE IF NOT EXISTS questions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, question TEXT, answer TEXT, date TEXT, status TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS broadcast (id INTEGER PRIMARY KEY AUTOINCREMENT, message TEXT, date TEXT, status TEXT)")
 c.execute("CREATE TABLE IF NOT EXISTS user_settings (user_id INTEGER PRIMARY KEY, theme TEXT DEFAULT 'light')")
+c.execute("CREATE TABLE IF NOT EXISTS ratings (code TEXT, user_id INTEGER, rating INTEGER, date TEXT, PRIMARY KEY (code, user_id))")
 db.commit()
 
 # ===== اضافه کردن کانال‌های پیش‌فرض =====
@@ -138,3 +139,18 @@ def get_pending_broadcasts():
 def update_broadcast_status(id, status):
     c.execute("UPDATE broadcast SET status=? WHERE id=?", (status, id))
     db.commit()
+
+# ===== توابع امتیازدهی =====
+def save_rating(code, user_id, rating):
+    c.execute("INSERT OR REPLACE INTO ratings (code, user_id, rating, date) VALUES (?,?,?,?)", 
+              (code, user_id, rating, datetime.now().isoformat()))
+    db.commit()
+
+def get_rating(code):
+    c.execute("SELECT AVG(rating) FROM ratings WHERE code=?", (code,))
+    row = c.fetchone()
+    return round(row[0], 1) if row and row[0] else 0
+
+def get_rating_count(code):
+    c.execute("SELECT COUNT(*) FROM ratings WHERE code=?", (code,))
+    return c.fetchone()[0]
