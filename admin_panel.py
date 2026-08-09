@@ -1,4 +1,5 @@
 from aiogram import Router, types
+from aiogram.filters import Command
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from config import ADMIN_ID
 from database import *
@@ -172,11 +173,14 @@ async def view_feedback(message: types.Message):
     if not feedbacks:
         await message.answer("❌ نظری ثبت نشده!")
         return
+    
     text = "💬 لیست نظرات:\n\n"
     for id, user_id, msg, date in feedbacks[:10]:
         text += f"#{id} | کاربر {user_id}\n{msg}\n{date}\n---\n"
+    
     if len(feedbacks) > 10:
         text += f"\n... و {len(feedbacks) - 10} نظر دیگه"
+    
     await message.answer(text)
 
 # ===== سوالات =====
@@ -186,6 +190,7 @@ async def view_questions(message: types.Message):
     if not questions:
         await message.answer("❌ سوال بدون پاسخی وجود نداره!")
         return
+    
     for id, user_id, q, date in questions[:5]:
         keyboard = types.InlineKeyboardMarkup(
             inline_keyboard=[
@@ -196,6 +201,7 @@ async def view_questions(message: types.Message):
             f"❓ سوال #{id}\nاز کاربر {user_id}\n{q}\n{date}",
             reply_markup=keyboard
         )
+    
     if len(questions) > 5:
         await message.answer(f"... و {len(questions) - 5} سوال دیگه")
 
@@ -240,8 +246,10 @@ async def send_broadcast_immediate(message: types.Message):
     if not users:
         await message.answer("❌ کاربری وجود نداره!")
         return
+    
     user_states[message.from_user.id] = {}
     await message.answer(f"📤 ارسال به {len(users)} کاربر شروع شد...")
+    
     success = 0
     for user_id in users:
         try:
@@ -250,6 +258,7 @@ async def send_broadcast_immediate(message: types.Message):
             await asyncio.sleep(0.05)
         except:
             pass
+    
     await message.answer(f"✅ پیام به {success} کاربر ارسال شد!")
 
 # ===== زمان‌بندی شده =====
