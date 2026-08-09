@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
-# ثبت روت‌ها
+# ثبت هر دو روت
 dp.include_router(user_router)
 dp.include_router(admin_router)
 
