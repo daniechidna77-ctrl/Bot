@@ -4,6 +4,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import ADMIN_ID
 from database import *
 import asyncio
+import re
 
 router = Router()
 user_states = {}
@@ -21,14 +22,19 @@ def user_menu_keyboard():
     ])
     return keyboard
 
-# ===== دکمه‌های عضویت =====
-def join_keyboard(channels):
+# ===== دکمه‌های عضویت (با ری اکشن) =====
+def join_keyboard(channels, post_link=None):
     buttons = []
     for ch in channels:
         buttons.append([InlineKeyboardButton(text=f"📢 عضویت در @{ch}", url=f"https://t.me/{ch}")])
     if len(channels) > 1:
         buttons.append([InlineKeyboardButton(text="🔗 عضویت در همه کانال‌ها", callback_data="join_all")])
     buttons.append([InlineKeyboardButton(text="✅ عضو شدم", callback_data="check_mem")])
+    
+    # دکمه ری اکشن (لایک)
+    if post_link:
+        buttons.append([InlineKeyboardButton(text="👍 ری اکشن بزن", url=post_link)])
+    
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # ===== چک کردن عضویت =====
@@ -45,21 +51,25 @@ async def is_member(bot, user_id):
             return False
     return True
 
-# ===== ارسال فایل با دکمه اشتراک‌گذاری =====
-async def send_file_with_share(message, file_id, file_type, code):
+# ===== ارسال فایل با کپشن و اشتراک‌گذاری =====
+async def send_file_with_share(message, file_id, file_type, code, caption=""):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="📤 اشتراک‌گذاری چپتر", callback_data=f"share_{code}")],
         [InlineKeyboardButton(text="📋 منو", callback_data="menu")]
     ])
     
+    final_caption = f"📖 چپتر {code}\n"
+    if caption:
+        final_caption += f"\n{caption}"
+    
     if file_type == "document":
-        await message.answer_document(file_id, caption=f"📖 چپتر {code}", reply_markup=keyboard)
+        await message.answer_document(file_id, caption=final_caption, reply_markup=keyboard)
     elif file_type == "photo":
-        await message.answer_photo(file_id, caption=f"📖 چپتر {code}", reply_markup=keyboard)
+        await message.answer_photo(file_id, caption=final_caption, reply_markup=keyboard)
     elif file_type == "video":
-        await message.answer_video(file_id, caption=f"📖 چپتر {code}", reply_markup=keyboard)
+        await message.answer_video(file_id, caption=final_caption, reply_markup=keyboard)
     else:
-        await message.answer_document(file_id, caption=f"📖 چپتر {code}", reply_markup=keyboard)
+        await message.answer_document(file_id, caption=final_caption, reply_markup=keyboard)
 
 # ===== استارت =====
 @router.message(CommandStart())
@@ -78,19 +88,22 @@ async def start(message: types.Message):
     code = args[1]
     user_states[message.from_user.id] = {"code": code}
     
-    if not await is_member(message.bot, message.from_user.id):
-        channels = get_channels()
-        await message.answer(
-            "🔒 برای دریافت فایل، عضو کانال‌ها شو:",
-            reply_markup=join_keyboard(channels)
-        )
-        return
+    # چک کردن عضویت
+    channels = get_channels()
+    if channels:
+        if not await is_member(message.bot, message.from_user.id):
+            await message.answer(
+                "🔒 برای دریافت فایل، ابتدا عضو کانال‌ها شو:",
+                reply_markup=join_keyboard(channels)
+            )
+            return
     
+    # پیدا کردن فایل
     file_info = find_file(code)
     if file_info:
-        file_id, file_type = file_info
+        file_id, file_type, caption = file_info
         increment_download(code)
-        await send_file_with_share(message, file_id, file_type, code)
+        await send_file_with_share(message, file_id, file_type, code, caption or "")
     else:
         await message.answer(f"❌ چپتر {code} پیدا نشد!")
 
@@ -110,9 +123,9 @@ async def check_mem(call: types.CallbackQuery):
     file_info = find_file(code)
     await call.message.delete()
     if file_info:
-        file_id, file_type = file_info
+        file_id, file_type, caption = file_info
         increment_download(code)
-        await send_file_with_share(call.message, file_id, file_type, code)
+        await send_file_with_share(call.message, file_id, file_type, code, caption or "")
     else:
         await call.message.answer(f"❌ چپتر {code} پیدا نشد!")
 
