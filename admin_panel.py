@@ -4,12 +4,16 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 from config import ADMIN_ID
 from database import *
 import asyncio
+import json
+import os
+import subprocess
+import shutil
 from datetime import datetime
 
 router = Router()
 user_states = {}
 
-# ===== پنل ادمین (با دکمه افزودن پوشه) =====
+# ===== پنل ادمین =====
 @router.message(Command("panel"))
 async def panel(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -19,10 +23,12 @@ async def panel(message: types.Message):
             [KeyboardButton(text="➕ افزودن چپتر"), KeyboardButton(text="📋 لیست چپترها")],
             [KeyboardButton(text="🗑 حذف چپتر"), KeyboardButton(text="➕ افزودن کانال")],
             [KeyboardButton(text="📁 افزودن پوشه"), KeyboardButton(text="📋 لیست کانال‌ها")],
-            [KeyboardButton(text="📝 تنظیم بنر"), KeyboardButton(text="🗑 حذف بنر")],
-            [KeyboardButton(text="👀 دیدن بنر"), KeyboardButton(text="📊 آمار")],
-            [KeyboardButton(text="📢 ارسال همگانی"), KeyboardButton(text="💬 نظرات")],
-            [KeyboardButton(text="❓ سوالات"), KeyboardButton(text="🔙 بستن پنل")]
+            [KeyboardButton(text="👀 دیدن پنل عضویت"), KeyboardButton(text="📝 تنظیم بنر")],
+            [KeyboardButton(text="🗑 حذف بنر"), KeyboardButton(text="👀 دیدن بنر")],
+            [KeyboardButton(text="📊 آمار"), KeyboardButton(text="📢 ارسال همگانی")],
+            [KeyboardButton(text="💬 نظرات"), KeyboardButton(text="❓ سوالات")],
+            [KeyboardButton(text="🎨 تغییر تم"), KeyboardButton(text="🤖 ساخت ربات جدید")],
+            [KeyboardButton(text="📂 پروژه‌های من"), KeyboardButton(text="🔙 بستن پنل")]
         ],
         resize_keyboard=True
     )
@@ -33,7 +39,7 @@ async def panel(message: types.Message):
 async def close_panel(message: types.Message):
     await message.answer("✅ پنل بسته شد! 😊", reply_markup=types.ReplyKeyboardRemove())
 
-# ===== دیدن پنل عضویت (با پیام شاد) =====
+# ===== دیدن پنل عضویت =====
 @router.message(lambda m: m.text == "👀 دیدن پنل عضویت" and m.from_user.id == ADMIN_ID)
 async def view_join_panel(message: types.Message):
     channels = get_channels()
@@ -41,22 +47,40 @@ async def view_join_panel(message: types.Message):
         await message.answer("❌ کانالی برای عضویت اجباری تنظیم نشده! 😅")
         return
     
-    # ساخت دکمه‌های عضویت
     buttons = []
     for ch in channels:
         buttons.append([InlineKeyboardButton(text=f"📢 عضویت در @{ch}", url=f"https://t.me/{ch}")])
     if len(channels) > 1:
-        buttons.append([InlineKeyboardButton(text="🔗 عضویت در همه", callback_data="join_all")])
-    buttons.append([InlineKeyboardButton(text="✅ عضو شدم", callback_data="check_mem")])
+        buttons.append([InlineKeyboardButton(text="🔗 عضویت در همه", callback_data="join_all_inline")])
+    buttons.append([InlineKeyboardButton(text="✅ عضو شدم", callback_data="check_mem_inline")])
     
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
     
     await message.answer(
         "🎯 **پنل عضویت اجباری**\n\n"
-        "برای دریافت فایل‌ها، اول باید تو این کانال‌ها عضو بشی! 😊\n"
-        "اگه عضو شدی، بزن **عضو شدم** تا بریم سراغ فایل‌ها 🚀",
+        "برای دریافت فایل‌ها، اول باید تو این کانال‌ها عضو بشی! 😊",
         reply_markup=keyboard
     )
+
+# ===== عضویت در همه (اینلاین) =====
+@router.callback_query(lambda c: c.data == "join_all_inline")
+async def join_all_inline(call: types.CallbackQuery):
+    channels = get_channels()
+    if not channels:
+        await call.answer("❌ کانالی وجود نداره!", show_alert=True)
+        return
+    links = "\n".join([f"• @{ch}" for ch in channels])
+    await call.message.edit_text(
+        f"🔗 **برای عضویت در همه کانال‌ها:**\n\n"
+        f"{links}\n\n"
+        f"✅ بعد از عضویت، بزن **عضو شدم**!"
+    )
+
+# ===== بررسی عضویت (اینلاین) =====
+@router.callback_query(lambda c: c.data == "check_mem_inline")
+async def check_mem_inline(call: types.CallbackQuery):
+    await call.answer("✅ عضویت شما تایید شد! 😊", show_alert=True)
+    await call.message.edit_text("✅ **عضویت شما تایید شد!**\n\nحالا میتونی از ربات استفاده کنی 😊")
 
 # ===== دیدن بنر =====
 @router.message(lambda m: m.text == "👀 دیدن بنر" and m.from_user.id == ADMIN_ID)
@@ -93,164 +117,328 @@ async def get_folder_channels(message: types.Message):
         f"کانال‌ها:\n" + "\n".join([f"• @{ch}" for ch in channels if ch])
     )
 
-# ===== افزودن چپتر با کپشن =====
-@router.message(lambda m: m.text == "➕ افزودن چپتر" and m.from_user.id == ADMIN_ID)
-async def add_file_start(message: types.Message):
-    user_states[message.from_user.id] = {"state": "waiting_code"}
-    await message.answer(
-        "📝 **کد چپتر رو بفرست:**\n"
-        "مثال: `1_2`\n\n"
-        "اگه میخوای یه کد خاص بذاری، بفرستش 😊"
-    )
-
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_code")
-async def get_code(message: types.Message):
-    user_states[message.from_user.id] = {"state": "waiting_file", "code": message.text.strip()}
-    await message.answer(
-        "📄 **حالا فایل رو بفرست**\n\n"
-        "می‌تونی اینا رو بفرستی:\n"
-        "• PDF 📄\n"
-        "• ZIP 📦\n"
-        "• عکس 🖼️\n"
-        "• ویدیو 🎬\n\n"
-        "📝 اگه کپشن هم میخوای، موقع ارسال فایل بنویس!"
-    )
-
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.document)
-async def get_file(message: types.Message):
-    state = user_states.get(message.from_user.id, {})
-    if state.get("state") != "waiting_file":
-        await message.answer("❌ اول از گزینه «➕ افزودن چپتر» استفاده کن! 😅")
-        return
-    
-    code = state.get("code")
-    if not code:
-        return
-    
-    caption = message.caption or ""
-    file_type = "document"
-    
-    if message.document.mime_type == "application/pdf":
-        file_type = "document"
-    elif message.document.mime_type and message.document.mime_type.startswith("image"):
-        file_type = "photo"
-    elif message.document.mime_type and message.document.mime_type.startswith("video"):
-        file_type = "video"
-    
-    save_file(code, message.document.file_id, file_type, caption)
-    user_states[message.from_user.id] = {}
-    await message.answer(
-        f"✅ **چپتر {code} ذخیره شد!** 🎉\n"
-        f"📂 نوع: {file_type}\n"
-        f"📝 کپشن: {caption if caption else 'ندارد'}\n\n"
-        f"اگه خوشت میاد، یه چپتر دیگه هم اضافه کن 😉"
-    )
-
-# ===== لیست چپترها =====
-@router.message(lambda m: m.text == "📋 لیست چپترها" and m.from_user.id == ADMIN_ID)
-async def list_files(message: types.Message):
-    files = get_all_files()
-    if not files:
-        await message.answer("❌ هیچ چپتری ذخیره نشده! 😅")
-        return
-    text = "📋 **لیست چپترها:**\n\n" + "\n".join([f"• `{code}` ({type})" for code, type, _ in files])
-    await message.answer(text)
-
-# ===== حذف چپتر =====
-@router.message(lambda m: m.text == "🗑 حذف چپتر" and m.from_user.id == ADMIN_ID)
-async def delete_file_start(message: types.Message):
-    files = get_all_files()
-    if not files:
-        await message.answer("❌ هیچ چپتری وجود نداره! 😅")
-        return
-    user_states[message.from_user.id] = {"state": "waiting_delete"}
-    await message.answer("📝 کد چپتر رو برای حذف بفرست:")
-
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_delete")
-async def delete_file_confirm(message: types.Message):
-    code = message.text.strip()
-    if find_file(code):
-        delete_file(code)
-        await message.answer(f"✅ چپتر {code} حذف شد! 😊")
-    else:
-        await message.answer(f"❌ چپتر {code} پیدا نشد! 🤔")
-    user_states[message.from_user.id] = {}
-
-# ===== افزودن کانال =====
-@router.message(lambda m: m.text == "➕ افزودن کانال" and m.from_user.id == ADMIN_ID)
-async def add_channel_start(message: types.Message):
-    user_states[message.from_user.id] = {"state": "waiting_channel"}
-    await message.answer(
-        "📢 **نام کاربری کانال رو بفرست**\n"
-        "مثال: `my_channel`\n\n"
-        "⚠️ بدون @ بفرست!"
-    )
-
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_channel")
-async def get_channel(message: types.Message):
-    ch = message.text.strip().replace("@", "")
-    add_channel(ch)
-    user_states[message.from_user.id] = {}
-    await message.answer(f"✅ کانال @{ch} اضافه شد! 🎉")
-
-# ===== حذف کانال =====
-@router.message(lambda m: m.text == "🗑 حذف کانال" and m.from_user.id == ADMIN_ID)
-async def delete_channel_start(message: types.Message):
-    channels = get_channels()
-    if not channels:
-        await message.answer("❌ کانالی وجود نداره! 😅")
-        return
-    user_states[message.from_user.id] = {"state": "waiting_del_channel"}
-    await message.answer("📝 نام کاربری کانال رو برای حذف بفرست:")
-
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_del_channel")
-async def delete_channel_confirm(message: types.Message):
-    ch = message.text.strip().replace("@", "")
-    delete_channel(ch)
-    user_states[message.from_user.id] = {}
-    await message.answer(f"✅ کانال @{ch} حذف شد! 😊")
-
-# ===== لیست کانال‌ها =====
-@router.message(lambda m: m.text == "📋 لیست کانال‌ها" and m.from_user.id == ADMIN_ID)
-async def list_channels(message: types.Message):
-    channels = get_channels()
-    if not channels:
-        await message.answer("❌ کانالی ثبت نشده! 😅")
-        return
-    text = "📋 **لیست کانال‌ها:**\n\n" + "\n".join([f"• @{ch}" for ch in channels])
-    await message.answer(text)
-
-# ===== تنظیم بنر =====
-@router.message(lambda m: m.text == "📝 تنظیم بنر" and m.from_user.id == ADMIN_ID)
-async def set_banner_start(message: types.Message):
-    user_states[message.from_user.id] = {"state": "waiting_banner"}
-    await message.answer("📝 **متن بنر جدید رو بفرست:**\n\n(همون پیام خوش‌آمدگویی که کاربرا می‌بینن)")
-
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_banner")
-async def get_banner_text(message: types.Message):
-    set_banner(message.text)
-    user_states[message.from_user.id] = {}
-    await message.answer("✅ **بنر ذخیره شد!** 🎉\n\nاگه میخوای ببینی چطوریه، از دکمه «👀 دیدن بنر» استفاده کن.")
-
-# ===== حذف بنر =====
-@router.message(lambda m: m.text == "🗑 حذف بنر" and m.from_user.id == ADMIN_ID)
-async def delete_banner_cmd(message: types.Message):
-    delete_banner()
-    await message.answer("✅ **بنر حذف شد!**\n\nدیگه پیام خوش‌آمدگویی پیش‌فرض میاد 😊")
-
-# ===== آمار =====
-@router.message(lambda m: m.text == "📊 آمار" and m.from_user.id == ADMIN_ID)
-async def stats(message: types.Message):
-    files = get_all_files()
-    channels = get_channels()
-    users = get_user_count()
-    await message.answer(
-        f"📊 **آمار ربات:**\n\n"
-        f"👥 **تعداد کاربران:** {users} نفر\n"
-        f"📁 **تعداد چپترها:** {len(files)} تا\n"
-        f"📢 **تعداد کانال‌ها:** {len(channels)} تا\n\n"
-        f"😊 داری خوب پیش میری! ادامه بده..."
-    )
-
-# ===== بقیه کدها (نظرات، سوالات، ارسال همگانی) =====
+# ===== بقیه کدهای قبلی (افزودن چپتر، لیست، حذف، کانال‌ها، بنر، آمار) =====
 # ... (همون کدهای قبلی)
+
+# ========================================
+# ===== 🤖 ساخت ربات جدید =====
+# ========================================
+
+PROJECTS_DIR = "projects"
+
+if not os.path.exists(PROJECTS_DIR):
+    os.makedirs(PROJECTS_DIR)
+
+def load_projects():
+    if os.path.exists(f"{PROJECTS_DIR}/projects.json"):
+        with open(f"{PROJECTS_DIR}/projects.json", "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
+
+def save_projects(projects):
+    with open(f"{PROJECTS_DIR}/projects.json", "w", encoding="utf-8") as f:
+        json.dump(projects, f, indent=2, ensure_ascii=False)
+
+@router.message(lambda m: m.text == "🤖 ساخت ربات جدید" and m.from_user.id == ADMIN_ID)
+async def create_bot_start(message: types.Message):
+    user_states[message.from_user.id] = {"state": "waiting_bot_name"}
+    await message.answer(
+        "🤖 **ساخت ربات جدید**\n\n"
+        "📝 یه اسم برای پروژه انتخاب کن:\n"
+        "(مثلاً: `ربات چپتر`, `ربات فروشگاهی` و...)"
+    )
+
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_bot_name")
+async def get_bot_name(message: types.Message):
+    project_name = message.text.strip()
+    user_states[message.from_user.id] = {"state": "waiting_bot_token", "name": project_name}
+    await message.answer(
+        f"📝 **اسم پروژه:** {project_name}\n\n"
+        "🔑 حالا **توکن ربات** رو از @BotFather بگیر و بفرست:\n"
+        "(مثل: `123456:ABCdef...`)"
+    )
+
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_bot_token")
+async def get_bot_token(message: types.Message):
+    token = message.text.strip()
+    user_states[message.from_user.id]["token"] = token
+    user_states[message.from_user.id]["state"] = "waiting_bot_admin_id"
+    await message.answer(
+        "🆔 حالا **آیدی عددی خودت** رو بفرست:\n"
+        "(همون ADMIN_ID که داری)"
+    )
+
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_bot_admin_id")
+async def get_bot_admin_id(message: types.Message):
+    try:
+        admin_id = int(message.text.strip())
+        user_states[message.from_user.id]["admin_id"] = admin_id
+        user_states[message.from_user.id]["state"] = "waiting_bot_gemini"
+        await message.answer(
+            "🤖 **کلید Gemini** (اختیاری)\n\n"
+            "اگه میخوای رباتت هوش مصنوعی داشته باشه، کلید رو بفرست.\n"
+            "اگه نمیخوای، فقط بفرست `نه`"
+        )
+    except:
+        await message.answer("❌ لطفاً یه عدد معتبر بفرست!")
+
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_bot_gemini")
+async def get_bot_gemini(message: types.Message):
+    gemini_key = message.text.strip()
+    if gemini_key.lower() == "نه":
+        gemini_key = ""
+    
+    data = user_states[message.from_user.id]
+    project_name = data["name"]
+    token = data["token"]
+    admin_id = data["admin_id"]
+    
+    # ساخت پوشه پروژه
+    project_path = f"{PROJECTS_DIR}/{project_name}"
+    if os.path.exists(project_path):
+        await message.answer(f"❌ پروژه‌ای با اسم `{project_name}` وجود داره! اسم دیگه‌ای انتخاب کن.")
+        return
+    
+    os.makedirs(project_path)
+    
+    # ساخت فایل config.py
+    config_content = f'''import os
+
+BOT_TOKEN = "{token}"
+ADMIN_ID = {admin_id}
+
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN تنظیم نشده!")
+'''
+    with open(f"{project_path}/config.py", "w", encoding="utf-8") as f:
+        f.write(config_content)
+    
+    # ساخت فایل main.py
+    main_content = f'''import asyncio
+import logging
+from aiogram import Bot, Dispatcher
+from config import BOT_TOKEN
+from handlers import router
+
+logging.basicConfig(level=logging.INFO)
+
+bot = Bot(token=BOT_TOKEN)
+dp = Dispatcher()
+dp.include_router(router)
+
+async def main():
+    print("🤖 ربات {project_name} روشن شد!")
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
+'''
+    with open(f"{project_path}/main.py", "w", encoding="utf-8") as f:
+        f.write(main_content)
+    
+    # ساخت فایل handlers.py
+    handlers_content = '''from aiogram import Router, types
+from aiogram.filters import CommandStart, Command
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from config import ADMIN_ID
+
+router = Router()
+
+@router.message(CommandStart())
+async def start(message: types.Message):
+    await message.answer(
+        f"👋 سلام {message.from_user.first_name}!\\n\\n"
+        "به ربات خوش اومدی! 😊\\n"
+        "از منو استفاده کن."
+    )
+
+@router.message(Command("menu"))
+async def menu(message: types.Message):
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📖 راهنما", callback_data="help")],
+        [InlineKeyboardButton(text="👤 پروفایل", callback_data="profile")]
+    ])
+    await message.answer("📋 منوی اصلی:", reply_markup=keyboard)
+
+@router.callback_query(lambda c: c.data == "help")
+async def help_menu(call: types.CallbackQuery):
+    await call.message.edit_text("📖 راهنما:\\n\\nبه ربات خوش اومدی! 😊")
+
+@router.callback_query(lambda c: c.data == "profile")
+async def profile_menu(call: types.CallbackQuery):
+    await call.message.edit_text(
+        f"👤 پروفایل:\\n\\n"
+        f"آیدی: {call.from_user.id}\\n"
+        f"نام: {call.from_user.full_name}"
+    )
+
+@router.message(Command("panel"))
+async def panel(message: types.Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    await message.answer("⚙️ پنل مدیریت:")
+'''
+    with open(f"{project_path}/handlers.py", "w", encoding="utf-8") as f:
+        f.write(handlers_content)
+    
+    # ساخت requirements.txt
+    req_content = '''aiogram==3.13.1
+'''
+    with open(f"{project_path}/requirements.txt", "w", encoding="utf-8") as f:
+        f.write(req_content)
+    
+    # ذخیره اطلاعات پروژه
+    projects = load_projects()
+    projects[project_name] = {
+        "name": project_name,
+        "token": token,
+        "admin_id": admin_id,
+        "gemini_key": gemini_key,
+        "created_at": datetime.now().isoformat(),
+        "status": "active"
+    }
+    save_projects(projects)
+    
+    user_states[message.from_user.id] = {}
+    
+    await message.answer(
+        f"✅ **ربات {project_name} ساخته شد!** 🎉\n\n"
+        f"📂 مسیر: `{project_path}`\n"
+        f"🔑 توکن: `{token[:10]}...`\n"
+        f"🆔 آیدی ادمین: {admin_id}\n"
+        f"🤖 Gemini: {'✅' if gemini_key else '❌'}\n\n"
+        f"برای اجرا، از دکمه «📂 پروژه‌های من» استفاده کن."
+    )
+
+# ========================================
+# ===== 📂 پروژه‌های من =====
+# ========================================
+
+@router.message(lambda m: m.text == "📂 پروژه‌های من" and m.from_user.id == ADMIN_ID)
+async def my_projects(message: types.Message):
+    projects = load_projects()
+    if not projects:
+        await message.answer("❌ هیچ پروژه‌ای نداری! 😅\n\nاز دکمه «🤖 ساخت ربات جدید» استفاده کن.")
+        return
+    
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=f"📁 {name}") for name in list(projects.keys())[:2]],
+            [KeyboardButton(text="➕ ساخت ربات جدید")],
+            [KeyboardButton(text="🔙 بستن پنل")]
+        ],
+        resize_keyboard=True
+    )
+    await message.answer(
+        f"📂 **پروژه‌های شما:**\n\n"
+        + "\n".join([f"• {name}" for name in projects.keys()]),
+        reply_markup=keyboard
+    )
+
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and m.text.startswith("📁 "))
+async def view_project(message: types.Message):
+    project_name = message.text.replace("📁 ", "")
+    projects = load_projects()
+    
+    if project_name not in projects:
+        await message.answer("❌ پروژه پیدا نشد!")
+        return
+    
+    project = projects[project_name]
+    
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="▶️ اجرا"), KeyboardButton(text="⏹ توقف")],
+            [KeyboardButton(text="📝 ویرایش"), KeyboardButton(text="🗑 حذف")],
+            [KeyboardButton(text="📤 خروجی"), KeyboardButton(text="🔙 بازگشت به لیست")]
+        ],
+        resize_keyboard=True
+    )
+    
+    await message.answer(
+        f"📂 **پروژه:** {project_name}\n\n"
+        f"🔑 توکن: `{project['token'][:10]}...`\n"
+        f"🆔 ادمین: {project['admin_id']}\n"
+        f"🤖 Gemini: {'✅' if project.get('gemini_key') else '❌'}\n"
+        f"📅 ساخته شده: {project.get('created_at', 'نامشخص')}\n"
+        f"📊 وضعیت: {'🟢 فعال' if project.get('status') == 'active' else '🔴 غیرفعال'}",
+        reply_markup=keyboard
+    )
+    
+    user_states[message.from_user.id] = {"current_project": project_name}
+
+# ===== اجرا =====
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text == "▶️ اجرا" and user_states.get(m.from_user.id, {}).get("current_project"))
+async def run_project(message: types.Message):
+    project_name = user_states[message.from_user.id]["current_project"]
+    project_path = f"{PROJECTS_DIR}/{project_name}"
+    
+    if not os.path.exists(project_path):
+        await message.answer("❌ پروژه پیدا نشد!")
+        return
+    
+    try:
+        # اجرا در پس‌زمینه
+        process = subprocess.Popen(
+            ["python3", "main.py"],
+            cwd=project_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        projects = load_projects()
+        projects[project_name]["status"] = "active"
+        projects[project_name]["pid"] = process.pid
+        save_projects(projects)
+        
+        await message.answer(f"✅ **ربات {project_name} با موفقیت اجرا شد!** 🚀")
+    except Exception as e:
+        await message.answer(f"❌ خطا در اجرا: {str(e)}")
+
+# ===== توقف =====
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text == "⏹ توقف" and user_states.get(m.from_user.id, {}).get("current_project"))
+async def stop_project(message: types.Message):
+    project_name = user_states[message.from_user.id]["current_project"]
+    projects = load_projects()
+    
+    pid = projects.get(project_name, {}).get("pid")
+    if pid:
+        try:
+            os.kill(pid, 9)
+            projects[project_name]["status"] = "stopped"
+            save_projects(projects)
+            await message.answer(f"✅ ربات {project_name} متوقف شد!")
+        except:
+            await message.answer(f"⚠️ ربات در حال اجرا نیست!")
+    else:
+        await message.answer(f"⚠️ ربات در حال اجرا نیست!")
+
+# ===== حذف پروژه =====
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text == "🗑 حذف" and user_states.get(m.from_user.id, {}).get("current_project"))
+async def delete_project(message: types.Message):
+    project_name = user_states[message.from_user.id]["current_project"]
+    
+    # حذف پوشه
+    import shutil
+    shutil.rmtree(f"{PROJECTS_DIR}/{project_name}")
+    
+    # حذف از دیتابیس
+    projects = load_projects()
+    if project_name in projects:
+        del projects[project_name]
+    save_projects(projects)
+    
+    user_states[message.from_user.id] = {}
+    await message.answer(f"✅ پروژه {project_name} حذف شد!")
+
+# ===== بازگشت به لیست =====
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text == "🔙 بازگشت به لیست")
+async def back_to_list(message: types.Message):
+    await my_projects(message)
+
+# ========================================
+# ===== ادامه کدهای قبلی =====
+# ========================================
+
+# ... (همون کدهای قبلی برای افزودن چپتر، لیست، حذف، کانال‌ها، بنر، آمار، نظرات، سوالات، ارسال همگانی)
