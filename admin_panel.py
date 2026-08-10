@@ -14,7 +14,10 @@ import re
 router = Router()
 user_states = {}
 
-# ===== پنل ادمین =====
+# ========================================
+# ===== پنل ادمین (با دکمه تست) =====
+# ========================================
+
 @router.message(Command("panel"))
 async def panel(message: types.Message):
     if message.from_user.id != ADMIN_ID:
@@ -31,12 +34,124 @@ async def panel(message: types.Message):
             [KeyboardButton(text="🗑 حذف بنر"), KeyboardButton(text="👀 دیدن بنر")],
             [KeyboardButton(text="📊 آمار"), KeyboardButton(text="📢 ارسال همگانی")],
             [KeyboardButton(text="💬 نظرات"), KeyboardButton(text="❓ سوالات")],
-            [KeyboardButton(text="👍 ری اکشن پست"), KeyboardButton(text="🤖 ساخت ربات جدید")],
-            [KeyboardButton(text="📂 پروژه‌های من"), KeyboardButton(text="🔙 بستن پنل")]
+            [KeyboardButton(text="👍 ری اکشن پست"), KeyboardButton(text="🧪 تست ربات")],
+            [KeyboardButton(text="🤖 ساخت ربات جدید"), KeyboardButton(text="📂 پروژه‌های من")],
+            [KeyboardButton(text="🔙 بستن پنل")]
         ],
         resize_keyboard=True
     )
-    await message.answer("🤖 به پنل مدیریت خوش اومدی! چیکار میخوای بکنی؟ 😊", reply_markup=keyboard)
+    await message.answer(
+        "🤖 **پنل مدیریت**\n\n"
+        "👋 خوش اومدی! چیکار میخوای بکنی؟ 😊",
+        reply_markup=keyboard
+    )
+
+# ========================================
+# ===== 🧪 تست ربات =====
+# ========================================
+
+@router.message(lambda m: m.text == "🧪 تست ربات" and m.from_user.id == ADMIN_ID)
+async def test_robot(message: types.Message):
+    """نمایش کامل پروسه دریافت چپتر برای تست"""
+    
+    # ۱. گرفتن اطلاعات
+    channels = get_channels()
+    banner_data = get_active_banner()
+    post_link = get_reaction_post()
+    
+    # ۲. ساخت پیام تست
+    test_text = (
+        "🧪 **تست کامل ربات**\n\n"
+        "این یک شبیه‌سازی از پروسه دریافت چپتر برای کاربران است:\n\n"
+    )
+    
+    # ۳. نمایش کانال‌ها
+    if channels:
+        test_text += "🔒 **مرحله ۱: عضویت اجباری**\n"
+        test_text += "در کانال‌های زیر عضو شوید:\n"
+        for ch in channels:
+            test_text += f"• @{ch}\n"
+        
+        # نمایش دکمه‌های عضویت
+        from handlers import join_keyboard
+        await message.answer(
+            test_text,
+            reply_markup=join_keyboard(channels, post_link)
+        )
+    else:
+        test_text += "✅ **مرحله ۱: عضویت اجباری**\n"
+        test_text += "هیچ کانالی تنظیم نشده! (مرحله رد شد)\n\n"
+        await message.answer(test_text)
+    
+    # ۴. نمایش ری اکشن
+    if post_link:
+        await message.answer(
+            "👍 **مرحله ۲: ری اکشن پست**\n\n"
+            f"روی لینک زیر کلیک کنید و ری اکشن بزنید:\n"
+            f"{post_link}\n\n"
+            "✅ بعد از ری اکشن، فایل ارسال میشود."
+        )
+    else:
+        await message.answer(
+            "👍 **مرحله ۲: ری اکشن پست**\n\n"
+            "هیچ ری اکشنی تنظیم نشده! (مرحله رد شد)"
+        )
+    
+    # ۵. نمایش بنر
+    await message.answer(
+        "📝 **مرحله ۳: بنر**\n\n"
+        "بنر فعلی ربات به این شکل است:"
+    )
+    
+    # ارسال بنر
+    if banner_data["type"] == "photo" and banner_data["file_id"]:
+        await message.answer_photo(
+            banner_data["file_id"],
+            caption=banner_data["text"] or "📢 به ربات خوش اومدی!"
+        )
+    elif banner_data["type"] == "video" and banner_data["file_id"]:
+        await message.answer_video(
+            banner_data["file_id"],
+            caption=banner_data["text"] or "📢 به ربات خوش اومدی!"
+        )
+    else:
+        await message.answer(banner_data["text"] or "📢 به ربات خوش اومدی!")
+    
+    # ۶. نمایش فایل نمونه
+    files = get_all_files()
+    if files:
+        # اولین فایل رو برای تست نمایش بده
+        first_file = files[0]
+        await message.answer(
+            f"📄 **مرحله ۴: فایل**\n\n"
+            f"نمونه فایل چپتر `{first_file[0]}`:\n"
+            f"📂 نوع: {first_file[1]}\n"
+            f"📝 کپشن: {first_file[2] or 'ندارد'}"
+        )
+        
+        # سعی کن فایل رو نمایش بدی
+        file_info = find_file(first_file[0])
+        if file_info:
+            file_id, file_type, caption = file_info
+            from handlers import send_file_only
+            await send_file_only(message, file_id, file_type, caption or "")
+    else:
+        await message.answer(
+            "📄 **مرحله ۴: فایل**\n\n"
+            "❌ هیچ چپتری ذخیره نشده!\n"
+            "لطفاً ابتدا یک چپتر اضافه کنید."
+        )
+    
+    # ۷. جمع‌بندی
+    await message.answer(
+        "✅ **تست کامل شد!** 🎉\n\n"
+        "اگر همه مراحل را دیدید، ربات شما سالم است.\n"
+        "اگر مشکلی دیدید، لاگ را بررسی کنید."
+    )
+
+# ========================================
+# ===== بقیه کدهای پنل (همون قبلی) =====
+# ========================================
 
 # ===== بستن پنل =====
 @router.message(lambda m: m.text == "🔙 بستن پنل" and m.from_user.id == ADMIN_ID)
@@ -45,15 +160,11 @@ async def close_panel(message: types.Message):
         del user_states[message.from_user.id]
     await message.answer("✅ پنل بسته شد! 😊", reply_markup=types.ReplyKeyboardRemove())
 
-# ===== پاک کردن حالت کاربر =====
 def clear_user_state(user_id):
     if user_id in user_states:
         del user_states[user_id]
 
-# ========================================
 # ===== دیدن پنل عضویت =====
-# ========================================
-
 @router.message(lambda m: m.text == "👀 دیدن پنل عضویت" and m.from_user.id == ADMIN_ID)
 async def view_join_panel(message: types.Message):
     channels = get_channels()
@@ -79,10 +190,7 @@ async def check_mem_inline(call: types.CallbackQuery):
     await call.answer("✅ عضویت شما تایید شد! 😊", show_alert=True)
     await call.message.edit_text("✅ **عضویت شما تایید شد!**\n\nحالا میتونی از ربات استفاده کنی 😊")
 
-# ========================================
 # ===== ری اکشن پست =====
-# ========================================
-
 @router.message(lambda m: m.text == "👍 ری اکشن پست" and m.from_user.id == ADMIN_ID)
 async def reaction_post(message: types.Message):
     user_states[message.from_user.id] = {"state": "waiting_reaction_post"}
@@ -97,7 +205,7 @@ async def get_reaction_post(message: types.Message):
     post_link = message.text.strip()
     set_reaction_post(post_link)
     clear_user_state(message.from_user.id)
-    await message.answer(f"✅ **لینک پست ذخیره شد!**\n\n{post_link}\n\nکاربرا برای دریافت فایل باید ری اکشن بزنن.")
+    await message.answer(f"✅ **لینک پست ذخیره شد!**\n\n{post_link}")
 
 # ========================================
 # ===== 👀 دیدن بنر =====
@@ -125,8 +233,8 @@ async def set_banner_start(message: types.Message):
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📝 بنر متنی")],
-            [KeyboardButton(text="🖼 بنر عکس")],
-            [KeyboardButton(text="🎬 بنر ویدیو")],
+            [KeyboardButton(text="🖼 بنر عکس/فوروارد")],
+            [KeyboardButton(text="🎬 بنر ویدیو/فوروارد")],
             [KeyboardButton(text="⏰ زمان‌بندی شده")],
             [KeyboardButton(text="🔙 بستن پنل")]
         ],
@@ -136,13 +244,12 @@ async def set_banner_start(message: types.Message):
     await message.answer(
         "📝 **نوع بنر رو انتخاب کن:**\n\n"
         "• متنی: فقط متن\n"
-        "• عکس: عکس با کپشن\n"
-        "• ویدیو: ویدیو با کپشن\n"
+        "• عکس/فوروارد: عکس یا فوروارد شده\n"
+        "• ویدیو/فوروارد: ویدیو یا فوروارد شده\n"
         "• زمان‌بندی شده: بنر در زمان مشخص ارسال بشه",
         reply_markup=keyboard
     )
 
-# ===== انتخاب نوع بنر =====
 @router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_banner_type")
 async def get_banner_type(message: types.Message):
     banner_type = message.text
@@ -154,18 +261,16 @@ async def get_banner_type(message: types.Message):
             "برای تنظیم زمان انقضا، بعد از متن بنویس:\n"
             "`/expire تعداد روز/هفته/ماه`\n\n"
             "مثال:\n"
-            "`به ربات خوش اومدی! 😊 /expire 10 روز`\n"
-            "`به ربات خوش اومدی! 😊 /expire 2 هفته`\n"
-            "`به ربات خوش اومدی! 😊 /expire 1 ماه`"
+            "`به ربات خوش اومدی! 😊 /expire 10 روز`"
         )
     
-    elif banner_type == "🖼 بنر عکس":
+    elif banner_type == "🖼 بنر عکس/فوروارد":
         user_states[message.from_user.id] = {"state": "waiting_banner_photo"}
-        await message.answer("🖼 **عکس رو بفرست**\n\n(کپشن رو هم میتونی بنویسی)")
+        await message.answer("🖼 **عکس یا پست فورواردی رو بفرست**\n\n(کپشن رو هم میتونی بنویسی)")
     
-    elif banner_type == "🎬 بنر ویدیو":
+    elif banner_type == "🎬 بنر ویدیو/فوروارد":
         user_states[message.from_user.id] = {"state": "waiting_banner_video"}
-        await message.answer("🎬 **ویدیو رو بفرست**\n\n(کپشن رو هم میتونی بنویسی)")
+        await message.answer("🎬 **ویدیو یا پست فورواردی رو بفرست**\n\n(کپشن رو هم میتونی بنویسی)")
     
     elif banner_type == "⏰ زمان‌بندی شده":
         user_states[message.from_user.id] = {"state": "waiting_banner_schedule"}
@@ -205,12 +310,19 @@ async def set_banner_text(message: types.Message):
     clear_user_state(message.from_user.id)
 
 # ===== بنر عکس =====
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.photo and user_states.get(m.from_user.id, {}).get("state") == "waiting_banner_photo")
+@router.message(lambda m: m.from_user.id == ADMIN_ID and (m.photo or m.document) and user_states.get(m.from_user.id, {}).get("state") == "waiting_banner_photo")
 async def set_banner_photo(message: types.Message):
-    file_id = message.photo[-1].file_id
-    caption = message.caption or ""
+    if message.photo:
+        file_id = message.photo[-1].file_id
+    elif message.document and message.document.mime_type and message.document.mime_type.startswith("image"):
+        file_id = message.document.file_id
+    else:
+        await message.answer("❌ لطفاً یک عکس بفرست!")
+        return
     
+    caption = message.caption or ""
     expire_date = None
+    
     match = re.search(r'/expire\s+(\d+)\s*(روز|هفته|ماه)', caption)
     if match:
         amount = int(match.group(1))
@@ -229,12 +341,19 @@ async def set_banner_photo(message: types.Message):
     await message.answer(f"✅ **بنر عکس ذخیره شد!**")
 
 # ===== بنر ویدیو =====
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.video and user_states.get(m.from_user.id, {}).get("state") == "waiting_banner_video")
+@router.message(lambda m: m.from_user.id == ADMIN_ID and (m.video or m.document) and user_states.get(m.from_user.id, {}).get("state") == "waiting_banner_video")
 async def set_banner_video(message: types.Message):
-    file_id = message.video.file_id
-    caption = message.caption or ""
+    if message.video:
+        file_id = message.video.file_id
+    elif message.document and message.document.mime_type and message.document.mime_type.startswith("video"):
+        file_id = message.document.file_id
+    else:
+        await message.answer("❌ لطفاً یک ویدیو بفرست!")
+        return
     
+    caption = message.caption or ""
     expire_date = None
+    
     match = re.search(r'/expire\s+(\d+)\s*(روز|هفته|ماه)', caption)
     if match:
         amount = int(match.group(1))
@@ -314,7 +433,7 @@ async def delete_banner_confirm(message: types.Message):
     await message.answer(f"✅ **بنر {banner_id} حذف شد!**")
 
 # ========================================
-# ===== بقیه کدهای قبلی =====
+# ===== بقیه کدهای قبلی (افزودن چپتر، لیست، حذف، کانال‌ها، آمار، نظرات، سوالات، ارسال همگانی) =====
 # ========================================
 
 # ===== افزودن چپتر =====
@@ -324,8 +443,7 @@ async def add_file_start(message: types.Message):
     user_states[message.from_user.id] = {"state": "waiting_code"}
     await message.answer(
         "📝 **کد چپتر رو بفرست:**\n"
-        "مثال: `1_2`\n\n"
-        "اگه میخوای یه کد خاص بذاری، بفرستش 😊"
+        "مثال: `1_2`"
     )
 
 @router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_code")
@@ -457,8 +575,7 @@ async def stats(message: types.Message):
         f"📊 **آمار ربات:**\n\n"
         f"👥 **تعداد کاربران:** {users} نفر\n"
         f"📁 **تعداد چپترها:** {len(files)} تا\n"
-        f"📢 **تعداد کانال‌ها:** {len(channels)} تا\n\n"
-        f"😊 داری خوب پیش میری! ادامه بده..."
+        f"📢 **تعداد کانال‌ها:** {len(channels)} تا"
     )
 
 # ===== نظرات =====
@@ -575,7 +692,7 @@ async def send_scheduled_broadcast(message: types.Message):
     await message.answer("⏰ پیام در زمان مشخص شده ارسال خواهد شد!")
 
 # ========================================
-# ===== 🤖 ساخت ربات جدید =====
+# ===== 🤖 ساخت ربات جدید (خلاصه) =====
 # ========================================
 
 PROJECTS_DIR = "projects"
@@ -655,6 +772,7 @@ async def get_bot_gemini(message: types.Message):
     
     os.makedirs(project_path)
     
+    # ساخت فایل‌ها
     config_content = f'''import os
 
 BOT_TOKEN = "{token}"
