@@ -15,7 +15,7 @@ router = Router()
 user_states = {}
 
 # ========================================
-# ===== پنل ادمین (با دکمه تست) =====
+# ===== پنل ادمین =====
 # ========================================
 
 @router.message(Command("panel"))
@@ -47,63 +47,109 @@ async def panel(message: types.Message):
     )
 
 # ========================================
-# ===== 🧪 تست ربات =====
+# ===== بستن پنل =====
+# ========================================
+
+@router.message(lambda m: m.text == "🔙 بستن پنل" and m.from_user.id == ADMIN_ID)
+async def close_panel(message: types.Message):
+    if message.from_user.id in user_states:
+        del user_states[message.from_user.id]
+    await message.answer("✅ پنل بسته شد! 😊", reply_markup=types.ReplyKeyboardRemove())
+
+def clear_user_state(user_id):
+    if user_id in user_states:
+        del user_states[user_id]
+
+# ========================================
+# ===== 🧪 تست ربات (شبیه‌سازی کاربر) =====
 # ========================================
 
 @router.message(lambda m: m.text == "🧪 تست ربات" and m.from_user.id == ADMIN_ID)
 async def test_robot(message: types.Message):
-    """نمایش کامل پروسه دریافت چپتر برای تست"""
+    """شبیه‌سازی کامل پروسه دریافت چپتر برای کاربر"""
     
-    # ۱. گرفتن اطلاعات
-    channels = get_channels()
-    banner_data = get_active_banner()
-    post_link = get_reaction_post()
+    # ۱. گرفتن اولین چپتر
+    files = get_all_files()
+    if not files:
+        await message.answer("❌ **هیچ چپتری ذخیره نشده!**\n\nلطفاً ابتدا یک چپتر اضافه کنید.")
+        return
     
-    # ۲. ساخت پیام تست
-    test_text = (
-        "🧪 **تست کامل ربات**\n\n"
-        "این یک شبیه‌سازی از پروسه دریافت چپتر برای کاربران است:\n\n"
+    first_code = files[0][0]
+    
+    # ۲. ساخت لینک تست
+    bot_username = (await message.bot.get_me()).username
+    test_link = f"https://t.me/{bot_username}?start={first_code}"
+    
+    # ۳. شبیه‌سازی پیام استارت
+    await message.answer(
+        f"🧪 **تست ربات - شبیه‌سازی کاربر**\n\n"
+        f"📱 کاربر روی لینک زیر کلیک میکند:\n"
+        f"`{test_link}`\n\n"
+        f"🔄 در حال شبیه‌سازی...\n"
     )
     
-    # ۳. نمایش کانال‌ها
+    # ۴. شبیه‌سازی دریافت بنر و پیام خوش‌آمدگویی
+    banner_data = get_active_banner()
+    await message.answer("📝 **مرحله ۱: بنر و خوش‌آمدگویی**")
+    await send_banner_test(message, banner_data)
+    await message.answer(
+        f"👋 **سلام کاربر تست!**\n\n"
+        f"😊 خوش اومدی! از منو استفاده کن."
+    )
+    
+    # ۵. شبیه‌سازی عضویت اجباری
+    channels = get_channels()
     if channels:
-        test_text += "🔒 **مرحله ۱: عضویت اجباری**\n"
-        test_text += "در کانال‌های زیر عضو شوید:\n"
-        for ch in channels:
-            test_text += f"• @{ch}\n"
-        
-        # نمایش دکمه‌های عضویت
         from handlers import join_keyboard
+        post_link = get_reaction_post()
+        
         await message.answer(
-            test_text,
+            "🔒 **مرحله ۲: عضویت اجباری**\n\n"
+            "برای دریافت فایل، باید در کانال‌های زیر عضو شوید:",
             reply_markup=join_keyboard(channels, post_link)
         )
     else:
-        test_text += "✅ **مرحله ۱: عضویت اجباری**\n"
-        test_text += "هیچ کانالی تنظیم نشده! (مرحله رد شد)\n\n"
-        await message.answer(test_text)
+        await message.answer("✅ **مرحله ۲: عضویت اجباری**\n\nهیچ کانالی تنظیم نشده! (مرحله رد شد)")
     
-    # ۴. نمایش ری اکشن
+    # ۶. شبیه‌سازی ری اکشن
     if post_link:
         await message.answer(
-            "👍 **مرحله ۲: ری اکشن پست**\n\n"
+            "👍 **مرحله ۳: ری اکشن پست**\n\n"
             f"روی لینک زیر کلیک کنید و ری اکشن بزنید:\n"
             f"{post_link}\n\n"
             "✅ بعد از ری اکشن، فایل ارسال میشود."
         )
     else:
-        await message.answer(
-            "👍 **مرحله ۲: ری اکشن پست**\n\n"
-            "هیچ ری اکشنی تنظیم نشده! (مرحله رد شد)"
-        )
+        await message.answer("👍 **مرحله ۳: ری اکشن پست**\n\nهیچ ری اکشنی تنظیم نشده! (مرحله رد شد)")
     
-    # ۵. نمایش بنر
+    # ۷. شبیه‌سازی دریافت فایل
     await message.answer(
-        "📝 **مرحله ۳: بنر**\n\n"
-        "بنر فعلی ربات به این شکل است:"
+        f"📄 **مرحله ۴: دریافت فایل**\n\n"
+        f"در حال ارسال چپتر `{first_code}` ..."
     )
     
-    # ارسال بنر
+    file_info = find_file(first_code)
+    if file_info:
+        file_id, file_type, caption = file_info
+        from handlers import send_file_only
+        await send_file_only(message, file_id, file_type, caption or "")
+    
+    # ۸. شبیه‌سازی بنر پایین فایل
+    await message.answer(
+        "📝 **مرحله ۵: بنر پایین فایل**\n\n"
+        "بنر فعلی ربات:"
+    )
+    await send_banner_test(message, banner_data)
+    
+    # ۹. جمع‌بندی
+    await message.answer(
+        "✅ **تست کامل شد!** 🎉\n\n"
+        "اگر همه مراحل را دیدید، ربات شما سالم است.\n"
+        "اگر مشکلی دیدید، لاگ را بررسی کنید."
+    )
+
+# ===== تابع ارسال بنر برای تست =====
+async def send_banner_test(message, banner_data):
     if banner_data["type"] == "photo" and banner_data["file_id"]:
         await message.answer_photo(
             banner_data["file_id"],
@@ -116,55 +162,11 @@ async def test_robot(message: types.Message):
         )
     else:
         await message.answer(banner_data["text"] or "📢 به ربات خوش اومدی!")
-    
-    # ۶. نمایش فایل نمونه
-    files = get_all_files()
-    if files:
-        # اولین فایل رو برای تست نمایش بده
-        first_file = files[0]
-        await message.answer(
-            f"📄 **مرحله ۴: فایل**\n\n"
-            f"نمونه فایل چپتر `{first_file[0]}`:\n"
-            f"📂 نوع: {first_file[1]}\n"
-            f"📝 کپشن: {first_file[2] or 'ندارد'}"
-        )
-        
-        # سعی کن فایل رو نمایش بدی
-        file_info = find_file(first_file[0])
-        if file_info:
-            file_id, file_type, caption = file_info
-            from handlers import send_file_only
-            await send_file_only(message, file_id, file_type, caption or "")
-    else:
-        await message.answer(
-            "📄 **مرحله ۴: فایل**\n\n"
-            "❌ هیچ چپتری ذخیره نشده!\n"
-            "لطفاً ابتدا یک چپتر اضافه کنید."
-        )
-    
-    # ۷. جمع‌بندی
-    await message.answer(
-        "✅ **تست کامل شد!** 🎉\n\n"
-        "اگر همه مراحل را دیدید، ربات شما سالم است.\n"
-        "اگر مشکلی دیدید، لاگ را بررسی کنید."
-    )
 
 # ========================================
-# ===== بقیه کدهای پنل (همون قبلی) =====
-# ========================================
-
-# ===== بستن پنل =====
-@router.message(lambda m: m.text == "🔙 بستن پنل" and m.from_user.id == ADMIN_ID)
-async def close_panel(message: types.Message):
-    if message.from_user.id in user_states:
-        del user_states[message.from_user.id]
-    await message.answer("✅ پنل بسته شد! 😊", reply_markup=types.ReplyKeyboardRemove())
-
-def clear_user_state(user_id):
-    if user_id in user_states:
-        del user_states[user_id]
-
 # ===== دیدن پنل عضویت =====
+# ========================================
+
 @router.message(lambda m: m.text == "👀 دیدن پنل عضویت" and m.from_user.id == ADMIN_ID)
 async def view_join_panel(message: types.Message):
     channels = get_channels()
@@ -190,7 +192,10 @@ async def check_mem_inline(call: types.CallbackQuery):
     await call.answer("✅ عضویت شما تایید شد! 😊", show_alert=True)
     await call.message.edit_text("✅ **عضویت شما تایید شد!**\n\nحالا میتونی از ربات استفاده کنی 😊")
 
+# ========================================
 # ===== ری اکشن پست =====
+# ========================================
+
 @router.message(lambda m: m.text == "👍 ری اکشن پست" and m.from_user.id == ADMIN_ID)
 async def reaction_post(message: types.Message):
     user_states[message.from_user.id] = {"state": "waiting_reaction_post"}
@@ -220,12 +225,47 @@ async def view_banner(message: types.Message):
     
     text = "📝 **لیست بنرها:**\n\n"
     for banner in banners:
-        text += f"• {banner['text'][:30]}... (نوع: {banner['type']}) - انقضا: {banner['expire_date'] or 'ندارد'}\n"
+        text += f"• ID: {banner['id']} | {banner['text'][:30]}... (نوع: {banner['type']}) - انقضا: {banner['expire_date'] or 'ندارد'}\n"
     
     await message.answer(text)
 
 # ========================================
-# ===== 📝 تنظیم بنر =====
+# ===== 🗑 حذف بنر =====
+# ========================================
+
+@router.message(lambda m: m.text == "🗑 حذف بنر" and m.from_user.id == ADMIN_ID)
+async def delete_banner_start(message: types.Message):
+    banners = get_all_banners()
+    if not banners:
+        await message.answer("❌ هیچ بنری وجود نداره!")
+        return
+    
+    # ساخت دکمه‌های حذف
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=f"🗑 {b['id']} - {b['text'][:15]}") for b in banners[:2]],
+            [KeyboardButton(text=f"🗑 {b['id']} - {b['text'][:15]}") for b in banners[2:4]],
+            [KeyboardButton(text="🔙 بستن پنل")]
+        ],
+        resize_keyboard=True
+    )
+    user_states[message.from_user.id] = {"state": "waiting_delete_banner"}
+    await message.answer(
+        "🗑 **برای حذف بنر، یکی رو انتخاب کن:**",
+        reply_markup=keyboard
+    )
+
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and m.text.startswith("🗑 ") and user_states.get(m.from_user.id, {}).get("state") == "waiting_delete_banner")
+async def delete_banner_confirm(message: types.Message):
+    # استخراج ID
+    parts = message.text.replace("🗑 ", "").split(" - ")
+    banner_id = int(parts[0])
+    delete_banner(banner_id)
+    clear_user_state(message.from_user.id)
+    await message.answer(f"✅ **بنر {banner_id} حذف شد!**")
+
+# ========================================
+# ===== 📝 تنظیم بنر (با زمان‌بندی) =====
 # ========================================
 
 @router.message(lambda m: m.text == "📝 تنظیم بنر" and m.from_user.id == ADMIN_ID)
@@ -261,7 +301,9 @@ async def get_banner_type(message: types.Message):
             "برای تنظیم زمان انقضا، بعد از متن بنویس:\n"
             "`/expire تعداد روز/هفته/ماه`\n\n"
             "مثال:\n"
-            "`به ربات خوش اومدی! 😊 /expire 10 روز`"
+            "`به ربات خوش اومدی! 😊 /expire 10 روز`\n"
+            "`به ربات خوش اومدی! 😊 /expire 2 هفته`\n"
+            "`به ربات خوش اومدی! 😊 /expire 1 ماه`"
         )
     
     elif banner_type == "🖼 بنر عکس/فوروارد":
@@ -277,7 +319,8 @@ async def get_banner_type(message: types.Message):
         await message.answer(
             "⏰ **زمان ارسال بنر رو بفرست**\n\n"
             "فرمت: `ساعت:دقیقه روز/ماه/سال`\n"
-            "مثال: `12:00 10/08/2026`"
+            "مثال: `12:00 10/08/2026`\n\n"
+            "⏰ بعد از تنظیم زمان، متن بنر رو میفرستی."
         )
     
     else:
@@ -288,6 +331,8 @@ async def get_banner_type(message: types.Message):
 async def set_banner_text(message: types.Message):
     text = message.text
     expire_date = None
+    amount = None
+    unit = None
     
     match = re.search(r'/expire\s+(\d+)\s*(روز|هفته|ماه)', text)
     if match:
@@ -301,13 +346,23 @@ async def set_banner_text(message: types.Message):
             expire_date = (datetime.now() + timedelta(weeks=amount)).isoformat()
         elif unit == "ماه":
             expire_date = (datetime.now() + timedelta(days=amount*30)).isoformat()
-        
-        await message.answer(f"✅ **بنر متنی ذخیره شد!**\n\n📝 {text}\n⏰ انقضا: {amount} {unit} دیگه")
-    else:
-        await message.answer(f"✅ **بنر متنی ذخیره شد!**\n\n📝 {text}\n⏰ بدون تاریخ انقضا")
     
-    add_banner("text", None, text, expire_date)
+    banner_id = add_banner("text", None, text, expire_date)
     clear_user_state(message.from_user.id)
+    
+    if expire_date:
+        await message.answer(
+            f"✅ **بنر متنی ذخیره شد!** (ID: {banner_id})\n\n"
+            f"📝 {text}\n"
+            f"⏰ انقضا: {amount} {unit} دیگه\n"
+            f"📅 تاریخ انقضا: {expire_date}"
+        )
+    else:
+        await message.answer(
+            f"✅ **بنر متنی ذخیره شد!** (ID: {banner_id})\n\n"
+            f"📝 {text}\n"
+            f"⏰ بدون تاریخ انقضا"
+        )
 
 # ===== بنر عکس =====
 @router.message(lambda m: m.from_user.id == ADMIN_ID and (m.photo or m.document) and user_states.get(m.from_user.id, {}).get("state") == "waiting_banner_photo")
@@ -322,6 +377,8 @@ async def set_banner_photo(message: types.Message):
     
     caption = message.caption or ""
     expire_date = None
+    amount = None
+    unit = None
     
     match = re.search(r'/expire\s+(\d+)\s*(روز|هفته|ماه)', caption)
     if match:
@@ -336,9 +393,14 @@ async def set_banner_photo(message: types.Message):
         elif unit == "ماه":
             expire_date = (datetime.now() + timedelta(days=amount*30)).isoformat()
     
-    add_banner("photo", file_id, caption, expire_date)
+    banner_id = add_banner("photo", file_id, caption, expire_date)
     clear_user_state(message.from_user.id)
-    await message.answer(f"✅ **بنر عکس ذخیره شد!**")
+    
+    await message.answer(
+        f"✅ **بنر عکس ذخیره شد!** (ID: {banner_id})\n\n"
+        f"📝 کپشن: {caption if caption else 'ندارد'}\n"
+        f"⏰ انقضا: {f'{amount} {unit} دیگه' if expire_date else 'ندارد'}"
+    )
 
 # ===== بنر ویدیو =====
 @router.message(lambda m: m.from_user.id == ADMIN_ID and (m.video or m.document) and user_states.get(m.from_user.id, {}).get("state") == "waiting_banner_video")
@@ -353,6 +415,8 @@ async def set_banner_video(message: types.Message):
     
     caption = message.caption or ""
     expire_date = None
+    amount = None
+    unit = None
     
     match = re.search(r'/expire\s+(\d+)\s*(روز|هفته|ماه)', caption)
     if match:
@@ -367,11 +431,19 @@ async def set_banner_video(message: types.Message):
         elif unit == "ماه":
             expire_date = (datetime.now() + timedelta(days=amount*30)).isoformat()
     
-    add_banner("video", file_id, caption, expire_date)
+    banner_id = add_banner("video", file_id, caption, expire_date)
     clear_user_state(message.from_user.id)
-    await message.answer(f"✅ **بنر ویدیو ذخیره شد!**")
+    
+    await message.answer(
+        f"✅ **بنر ویدیو ذخیره شد!** (ID: {banner_id})\n\n"
+        f"📝 کپشن: {caption if caption else 'ندارد'}\n"
+        f"⏰ انقضا: {f'{amount} {unit} دیگه' if expire_date else 'ندارد'}"
+    )
 
-# ===== زمان‌بندی بنر =====
+# ========================================
+# ===== ⏰ زمان‌بندی بنر =====
+# ========================================
+
 @router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_banner_schedule")
 async def set_banner_schedule(message: types.Message):
     try:
@@ -381,59 +453,42 @@ async def set_banner_schedule(message: types.Message):
         
         schedule_time = datetime(int(year), int(month), int(day), int(hour), int(minute))
         
+        if schedule_time < datetime.now():
+            await message.answer("❌ زمان وارد شده گذشته است! زمان آینده را وارد کن.")
+            return
+        
         user_states[message.from_user.id] = {
             "state": "waiting_banner_schedule_text",
             "schedule_time": schedule_time.isoformat()
         }
         await message.answer(
-            f"⏰ زمان ثبت شد: {schedule_time}\n\n"
-            f"📝 حالا متن بنر رو بفرست"
+            f"⏰ **زمان ثبت شد:** {schedule_time.strftime('%H:%M %d/%m/%Y')}\n\n"
+            f"📝 حالا **متن بنر** رو بفرست:"
         )
-    except:
-        await message.answer("❌ فرمت زمان اشتباه! مثال: `12:00 10/08/2026`")
+    except Exception as e:
+        await message.answer(
+            f"❌ **فرمت زمان اشتباه!**\n\n"
+            f"فرمت صحیح: `ساعت:دقیقه روز/ماه/سال`\n"
+            f"مثال: `12:00 10/08/2026`\n\n"
+            f"خطا: {e}"
+        )
 
 @router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and user_states.get(m.from_user.id, {}).get("state") == "waiting_banner_schedule_text")
 async def get_banner_schedule_text(message: types.Message):
     text = message.text
     schedule_time = user_states[message.from_user.id].get("schedule_time")
     
-    add_banner("text", None, text, None, schedule_time)
+    banner_id = add_banner("text", None, text, None, schedule_time)
     clear_user_state(message.from_user.id)
-    await message.answer(f"✅ **بنر زمان‌بندی شد!**\n\n⏰ ارسال در: {schedule_time}")
-
-# ========================================
-# ===== 🗑 حذف بنر =====
-# ========================================
-
-@router.message(lambda m: m.text == "🗑 حذف بنر" and m.from_user.id == ADMIN_ID)
-async def delete_banner_start(message: types.Message):
-    banners = get_all_banners()
-    if not banners:
-        await message.answer("❌ هیچ بنری وجود نداره!")
-        return
     
-    keyboard = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=f"🗑 {b['id']}") for b in banners[:3]],
-            [KeyboardButton(text="🔙 بستن پنل")]
-        ],
-        resize_keyboard=True
-    )
-    user_states[message.from_user.id] = {"state": "waiting_delete_banner"}
     await message.answer(
-        "🗑 **برای حذف بنر، یکی رو انتخاب کن:**",
-        reply_markup=keyboard
+        f"✅ **بنر زمان‌بندی شد!** (ID: {banner_id})\n\n"
+        f"📝 {text}\n"
+        f"⏰ ارسال در: {schedule_time}"
     )
-
-@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text and m.text.startswith("🗑 ") and user_states.get(m.from_user.id, {}).get("state") == "waiting_delete_banner")
-async def delete_banner_confirm(message: types.Message):
-    banner_id = int(message.text.replace("🗑 ", ""))
-    delete_banner(banner_id)
-    clear_user_state(message.from_user.id)
-    await message.answer(f"✅ **بنر {banner_id} حذف شد!**")
 
 # ========================================
-# ===== بقیه کدهای قبلی (افزودن چپتر، لیست، حذف، کانال‌ها، آمار، نظرات، سوالات، ارسال همگانی) =====
+# ===== بقیه کدهای قبلی =====
 # ========================================
 
 # ===== افزودن چپتر =====
