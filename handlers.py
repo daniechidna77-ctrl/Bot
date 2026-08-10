@@ -8,10 +8,7 @@ import asyncio
 router = Router()
 user_states = {}
 
-# ========================================
-# ===== کیبورد شیشه‌ای منو (برای کاربر) =====
-# ========================================
-
+# ===== کیبورد شیشه‌ای منو =====
 def user_menu_keyboard():
     keyboard = ReplyKeyboardMarkup(
         keyboard=[
@@ -26,10 +23,7 @@ def user_menu_keyboard():
     )
     return keyboard
 
-# ========================================
 # ===== دکمه‌های عضویت =====
-# ========================================
-
 def join_keyboard(channels, post_link=None):
     buttons = []
     for ch in channels:
@@ -41,10 +35,7 @@ def join_keyboard(channels, post_link=None):
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# ========================================
 # ===== چک کردن عضویت =====
-# ========================================
-
 async def is_member(bot, user_id):
     channels = get_channels()
     if not channels:
@@ -58,10 +49,7 @@ async def is_member(bot, user_id):
             return False
     return True
 
-# ========================================
 # ===== نمایش بنر =====
-# ========================================
-
 async def send_banner(message, banner_data):
     banner_type = banner_data.get("type", "text")
     file_id = banner_data.get("file_id")
@@ -74,10 +62,7 @@ async def send_banner(message, banner_data):
     else:
         await message.answer(text)
 
-# ========================================
-# ===== ارسال فایل (فقط کپشن) =====
-# ========================================
-
+# ===== ارسال فایل =====
 async def send_file_only(message, file_id, file_type, caption=""):
     final_caption = caption if caption else ""
     
@@ -91,7 +76,7 @@ async def send_file_only(message, file_id, file_type, caption=""):
         await message.answer_document(file_id, caption=final_caption)
 
 # ========================================
-# ===== استارت =====
+# ===== استارت (با ترتیب درست) =====
 # ========================================
 
 @router.message(CommandStart())
@@ -101,6 +86,7 @@ async def start(message: types.Message):
     add_user(message.from_user.id)
     post_link = get_reaction_post()
     
+    # استارت معمولی (بدون کد)
     if len(args) == 1:
         await send_banner(message, banner_data)
         await message.answer(
@@ -110,23 +96,39 @@ async def start(message: types.Message):
         )
         return
     
+    # استارت با کد چپتر
     code = args[1]
     user_states[message.from_user.id] = {"code": code}
     
+    # ===== مرحله ۱: عضویت اجباری =====
     channels = get_channels()
     if channels:
         if not await is_member(message.bot, message.from_user.id):
             await message.answer(
-                "🔒 **اول عضو کانال‌ها شو!** 😊\n\n"
-                "برای دریافت فایل، باید تو این کانال‌ها عضو بشی:",
+                "🔒 **مرحله ۱: عضویت اجباری**\n\n"
+                "برای دریافت فایل، باید در کانال‌های زیر عضو شوید:",
                 reply_markup=join_keyboard(channels, post_link)
             )
             return
     
+    # ===== مرحله ۲: ری اکشن پست (اگه تنظیم شده باشه) =====
+    if post_link:
+        await message.answer(
+            "👍 **مرحله ۲: ری اکشن پست**\n\n"
+            f"روی لینک زیر کلیک کنید و ری اکشن بزنید:\n"
+            f"{post_link}\n\n"
+            "✅ بعد از ری اکشن، فایل ارسال میشود."
+        )
+        # صبر برای ری اکشن (کاربر باید خودش بزنه)
+        # فعلاً ادامه میدیم چون ری اکشن رو خود کاربر باید بزنه
+    
+    # ===== مرحله ۳: دریافت فایل =====
     file_info = find_file(code)
     if file_info:
         file_id, file_type, caption = file_info
         increment_download(code)
+        
+        # ===== مرحله ۴: بنر پایین فایل =====
         await send_banner(message, banner_data)
         await send_file_only(message, file_id, file_type, caption or "")
     else:
@@ -144,20 +146,39 @@ async def check_mem(call: types.CallbackQuery):
         return
     
     code = state.get("code")
+    
+    # چک کردن عضویت
     if not await is_member(call.bot, call.from_user.id):
         await call.answer("❌ هنوز عضو نشدی! برو عضو شو 😊", show_alert=True)
         return
     
-    file_info = find_file(code)
+    # حذف پیام عضویت
     await call.message.delete()
+    
+    # ===== ادامه مراحل =====
+    post_link = get_reaction_post()
+    
+    # مرحله ۲: ری اکشن
+    if post_link:
+        await call.message.answer(
+            "👍 **مرحله ۲: ری اکشن پست**\n\n"
+            f"روی لینک زیر کلیک کنید و ری اکشن بزنید:\n"
+            f"{post_link}\n\n"
+            "✅ بعد از ری اکشن، فایل ارسال میشود."
+        )
+    
+    # مرحله ۳: فایل
+    file_info = find_file(code)
     if file_info:
         file_id, file_type, caption = file_info
         increment_download(code)
+        
+        # مرحله ۴: بنر + فایل
         banner_data = get_active_banner()
         await send_banner(call.message, banner_data)
         await send_file_only(call.message, file_id, file_type, caption or "")
     else:
-        await call.message.answer(f"❌ چپتر {code} پیدا نشد! 😅")
+        await call.message.answer(f"❌ **چپتر {code} پیدا نشد!** 😅")
 
 # ========================================
 # ===== منوی کاربر =====
