@@ -41,9 +41,12 @@ c.execute("""
     )
 """)
 
-# جدول بنر (با تاریخ انقضا)
+# جدول بنر (با پشتیبانی از عکس و ویدیو)
 c.execute("""
     CREATE TABLE IF NOT EXISTS banner (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        type TEXT DEFAULT 'text',
+        file_id TEXT,
         text TEXT,
         expire_date TEXT
     )
@@ -114,10 +117,6 @@ print(f"✅ کانال‌های پیش‌فرض اضافه شدند: {', '.join(
 # ========================================
 
 def save_file(code, file_id, file_type="document", caption=""):
-    """
-    ذخیره فایل جدید در دیتابیس
-    اگر فایل با همین کد وجود داشته باشد، جایگزین می‌شود
-    """
     c.execute("""
         INSERT OR REPLACE INTO files (code, file_id, type, caption)
         VALUES (?, ?, ?, ?)
@@ -127,10 +126,6 @@ def save_file(code, file_id, file_type="document", caption=""):
     return True
 
 def find_file(code):
-    """
-    پیدا کردن فایل بر اساس کد چپتر
-    بازگشت: (file_id, type, caption) یا None
-    """
     c.execute("""
         SELECT file_id, type, caption
         FROM files
@@ -144,19 +139,12 @@ def find_file(code):
     return None
 
 def delete_file(code):
-    """
-    حذف فایل بر اساس کد چپتر
-    """
     c.execute("DELETE FROM files WHERE code = ?", (code,))
     db.commit()
     print(f"🗑 فایل با کد '{code}' حذف شد")
     return True
 
 def get_all_files():
-    """
-    دریافت لیست همه فایل‌ها
-    بازگشت: لیستی از (code, type, caption)
-    """
     c.execute("""
         SELECT code, type, caption
         FROM files
@@ -167,9 +155,6 @@ def get_all_files():
     return rows
 
 def increment_download(code):
-    """
-    افزایش تعداد دانلود یک چپتر
-    """
     c.execute("""
         UPDATE files
         SET downloads = downloads + 1
@@ -180,9 +165,6 @@ def increment_download(code):
     return True
 
 def get_download_count(code):
-    """
-    دریافت تعداد دانلود یک چپتر
-    """
     c.execute("""
         SELECT downloads
         FROM files
@@ -196,9 +178,6 @@ def get_download_count(code):
 # ========================================
 
 def add_channel(username):
-    """
-    اضافه کردن کانال جدید به لیست عضویت اجباری
-    """
     username = username.replace("@", "").strip()
     c.execute("INSERT OR IGNORE INTO channels VALUES (?)", (username,))
     db.commit()
@@ -206,9 +185,6 @@ def add_channel(username):
     return True
 
 def delete_channel(username):
-    """
-    حذف کانال از لیست عضویت اجباری
-    """
     username = username.replace("@", "").strip()
     c.execute("DELETE FROM channels WHERE username = ?", (username,))
     db.commit()
@@ -216,10 +192,6 @@ def delete_channel(username):
     return True
 
 def get_channels():
-    """
-    دریافت لیست همه کانال‌های اجباری
-    بازگشت: لیستی از نام‌های کاربری
-    """
     c.execute("SELECT username FROM channels ORDER BY username")
     rows = c.fetchall()
     channels = [row[0] for row in rows]
@@ -227,80 +199,102 @@ def get_channels():
     return channels
 
 def get_channels_count():
-    """
-    دریافت تعداد کانال‌های اجباری
-    """
     c.execute("SELECT COUNT(*) FROM channels")
     return c.fetchone()[0]
 
 # ========================================
-# ===== توابع مربوط به بنر =====
+# ===== توابع مربوط به بنر (با عکس و ویدیو) =====
 # ========================================
 
-def set_banner(text, expire_date=None):
-    """
-    تنظیم بنر جدید با تاریخ انقضا (اختیاری)
-    """
+def set_banner_text(text, expire_date=None):
+    """تنظیم بنر به صورت متن"""
     c.execute("DELETE FROM banner")
-    c.execute("INSERT INTO banner VALUES (?, ?)", (text, expire_date))
+    c.execute("""
+        INSERT INTO banner (type, text, expire_date)
+        VALUES (?, ?, ?)
+    """, ("text", text, expire_date))
     db.commit()
-    if expire_date:
-        print(f"📝 بنر جدید با تاریخ انقضا {expire_date} ذخیره شد")
-    else:
-        print("📝 بنر جدید بدون تاریخ انقضا ذخیره شد")
+    print(f"📝 بنر متنی ذخیره شد: {text}")
+    return True
+
+def set_banner_photo(file_id, caption="", expire_date=None):
+    """تنظیم بنر به صورت عکس"""
+    c.execute("DELETE FROM banner")
+    c.execute("""
+        INSERT INTO banner (type, file_id, text, expire_date)
+        VALUES (?, ?, ?, ?)
+    """, ("photo", file_id, caption, expire_date))
+    db.commit()
+    print(f"🖼 بنر عکس ذخیره شد")
+    return True
+
+def set_banner_video(file_id, caption="", expire_date=None):
+    """تنظیم بنر به صورت ویدیو"""
+    c.execute("DELETE FROM banner")
+    c.execute("""
+        INSERT INTO banner (type, file_id, text, expire_date)
+        VALUES (?, ?, ?, ?)
+    """, ("video", file_id, caption, expire_date))
+    db.commit()
+    print(f"🎬 بنر ویدیو ذخیره شد")
     return True
 
 def get_banner():
-    """
-    دریافت بنر فعلی
-    اگر تاریخ انقضا گذشته باشد، بنر پیش‌فرض برمی‌گردد
-    """
-    c.execute("SELECT text, expire_date FROM banner LIMIT 1")
+    """دریافت بنر فعلی (متن، عکس یا ویدیو)"""
+    c.execute("""
+        SELECT type, file_id, text, expire_date
+        FROM banner
+        ORDER BY id DESC LIMIT 1
+    """)
     row = c.fetchone()
     
     if row:
-        text, expire_date = row
+        banner_type, file_id, text, expire_date = row
+        
         # بررسی تاریخ انقضا
         if expire_date:
             try:
                 expire_datetime = datetime.fromisoformat(expire_date)
                 if datetime.now() > expire_datetime:
                     print("⏰ بنر منقضی شده است")
-                    return "📢 به ربات خوش اومدی!"
+                    return {"type": "text", "file_id": None, "text": "📢 به ربات خوش اومدی!"}
             except:
                 pass
-        print("📝 بنر فعلی دریافت شد")
-        return text
+        
+        print(f"📝 بنر فعلی دریافت شد (نوع: {banner_type})")
+        return {
+            "type": banner_type,
+            "file_id": file_id,
+            "text": text or ""
+        }
     
     print("📝 هیچ بنری تنظیم نشده، بنر پیش‌فرض استفاده می‌شود")
-    return "📢 به ربات خوش اومدی!"
+    return {"type": "text", "file_id": None, "text": "📢 به ربات خوش اومدی!"}
 
 def delete_banner():
-    """
-    حذف بنر فعلی
-    """
+    """حذف بنر فعلی"""
     c.execute("DELETE FROM banner")
     db.commit()
     print("🗑 بنر حذف شد")
     return True
 
 def get_banner_expire_date():
-    """
-    دریافت تاریخ انقضای بنر
-    """
-    c.execute("SELECT expire_date FROM banner LIMIT 1")
+    """دریافت تاریخ انقضای بنر"""
+    c.execute("SELECT expire_date FROM banner ORDER BY id DESC LIMIT 1")
     row = c.fetchone()
     return row[0] if row and row[0] else None
+
+def get_banner_type():
+    """دریافت نوع بنر (text, photo, video)"""
+    c.execute("SELECT type FROM banner ORDER BY id DESC LIMIT 1")
+    row = c.fetchone()
+    return row[0] if row else "text"
 
 # ========================================
 # ===== توابع مربوط به کاربران =====
 # ========================================
 
 def add_user(user_id):
-    """
-    ثبت کاربر جدید در دیتابیس
-    اگر کاربر وجود داشته باشد، نادیده گرفته می‌شود
-    """
     c.execute("""
         INSERT OR IGNORE INTO users (user_id, join_date)
         VALUES (?, ?)
@@ -310,9 +304,6 @@ def add_user(user_id):
     return True
 
 def get_all_users():
-    """
-    دریافت لیست همه کاربران
-    """
     c.execute("SELECT user_id FROM users ORDER BY user_id")
     rows = c.fetchall()
     users = [row[0] for row in rows]
@@ -320,18 +311,12 @@ def get_all_users():
     return users
 
 def get_user_count():
-    """
-    دریافت تعداد کل کاربران
-    """
     c.execute("SELECT COUNT(*) FROM users")
     count = c.fetchone()[0]
     print(f"👥 تعداد کاربران: {count}")
     return count
 
 def get_user_join_date(user_id):
-    """
-    دریافت تاریخ ثبت‌نام یک کاربر
-    """
     c.execute("SELECT join_date FROM users WHERE user_id = ?", (user_id,))
     row = c.fetchone()
     return row[0] if row else None
@@ -341,9 +326,6 @@ def get_user_join_date(user_id):
 # ========================================
 
 def add_feedback(user_id, message):
-    """
-    ثبت نظر یا پیشنهاد جدید
-    """
     c.execute("""
         INSERT INTO feedback (user_id, message, date)
         VALUES (?, ?, ?)
@@ -353,9 +335,6 @@ def add_feedback(user_id, message):
     return True
 
 def get_all_feedback():
-    """
-    دریافت لیست همه نظرات (به ترتیب جدیدترین)
-    """
     c.execute("""
         SELECT id, user_id, message, date
         FROM feedback
@@ -366,9 +345,6 @@ def get_all_feedback():
     return rows
 
 def get_feedback_by_user(user_id):
-    """
-    دریافت نظرات یک کاربر خاص
-    """
     c.execute("""
         SELECT id, message, date
         FROM feedback
@@ -378,9 +354,6 @@ def get_feedback_by_user(user_id):
     return c.fetchall()
 
 def delete_feedback(feedback_id):
-    """
-    حذف یک نظر بر اساس ID
-    """
     c.execute("DELETE FROM feedback WHERE id = ?", (feedback_id,))
     db.commit()
     print(f"🗑 نظر {feedback_id} حذف شد")
@@ -391,9 +364,6 @@ def delete_feedback(feedback_id):
 # ========================================
 
 def add_question(user_id, question):
-    """
-    ثبت سوال جدید
-    """
     c.execute("""
         INSERT INTO questions (user_id, question, date, status)
         VALUES (?, ?, ?, ?)
@@ -403,9 +373,6 @@ def add_question(user_id, question):
     return True
 
 def get_pending_questions():
-    """
-    دریافت لیست سوالات بدون پاسخ
-    """
     c.execute("""
         SELECT id, user_id, question, date
         FROM questions
@@ -417,9 +384,6 @@ def get_pending_questions():
     return rows
 
 def get_all_questions():
-    """
-    دریافت لیست همه سوالات
-    """
     c.execute("""
         SELECT id, user_id, question, answer, date, status
         FROM questions
@@ -428,9 +392,6 @@ def get_all_questions():
     return c.fetchall()
 
 def get_question_data(question_id):
-    """
-    دریافت اطلاعات یک سوال بر اساس ID
-    """
     c.execute("""
         SELECT user_id, question
         FROM questions
@@ -440,9 +401,6 @@ def get_question_data(question_id):
     return row if row else None
 
 def answer_question(question_id, answer):
-    """
-    ثبت پاسخ برای یک سوال
-    """
     c.execute("""
         UPDATE questions
         SET answer = ?, status = 'answered'
@@ -453,9 +411,6 @@ def answer_question(question_id, answer):
     return True
 
 def get_user_questions(user_id):
-    """
-    دریافت سوالات یک کاربر خاص
-    """
     c.execute("""
         SELECT question, answer, status, date
         FROM questions
@@ -469,9 +424,6 @@ def get_user_questions(user_id):
 # ========================================
 
 def add_scheduled_broadcast(message, send_date, status="pending"):
-    """
-    ثبت پیام زمان‌بندی شده
-    """
     c.execute("""
         INSERT INTO broadcast (message, date, status)
         VALUES (?, ?, ?)
@@ -481,9 +433,6 @@ def add_scheduled_broadcast(message, send_date, status="pending"):
     return True
 
 def get_pending_broadcasts():
-    """
-    دریافت لیست پیام‌های زمان‌بندی شده که هنوز ارسال نشده‌اند
-    """
     c.execute("""
         SELECT id, message, date
         FROM broadcast
@@ -495,9 +444,6 @@ def get_pending_broadcasts():
     return rows
 
 def update_broadcast_status(broadcast_id, status):
-    """
-    به‌روزرسانی وضعیت یک پیام زمان‌بندی شده
-    """
     c.execute("""
         UPDATE broadcast
         SET status = ?
@@ -508,9 +454,6 @@ def update_broadcast_status(broadcast_id, status):
     return True
 
 def get_all_broadcasts():
-    """
-    دریافت لیست همه پیام‌های زمان‌بندی شده
-    """
     c.execute("""
         SELECT id, message, date, status
         FROM broadcast
@@ -523,9 +466,6 @@ def get_all_broadcasts():
 # ========================================
 
 def set_reaction_post(post_link):
-    """
-    ثبت لینک پست برای ری اکشن
-    """
     c.execute("DELETE FROM reaction_post")
     c.execute("INSERT INTO reaction_post (post_link) VALUES (?)", (post_link,))
     db.commit()
@@ -533,9 +473,6 @@ def set_reaction_post(post_link):
     return True
 
 def get_reaction_post():
-    """
-    دریافت لینک پست ری اکشن
-    """
     c.execute("SELECT post_link FROM reaction_post ORDER BY id DESC LIMIT 1")
     row = c.fetchone()
     if row:
@@ -545,9 +482,6 @@ def get_reaction_post():
     return None
 
 def delete_reaction_post():
-    """
-    حذف لینک پست ری اکشن
-    """
     c.execute("DELETE FROM reaction_post")
     db.commit()
     print("🗑 پست ری اکشن حذف شد")
@@ -558,9 +492,6 @@ def delete_reaction_post():
 # ========================================
 
 def clear_all_data():
-    """
-    پاک کردن همه داده‌ها (فقط برای مدیریت)
-    """
     c.execute("DELETE FROM files")
     c.execute("DELETE FROM channels")
     c.execute("DELETE FROM banner")
@@ -574,12 +505,9 @@ def clear_all_data():
     return True
 
 def get_db_stats():
-    """
-    دریافت آمار کلی دیتابیس
-    """
     stats = {
-        "files": get_all_files(),
-        "channels": get_channels(),
+        "files": len(get_all_files()),
+        "channels": len(get_channels()),
         "users": get_user_count(),
         "feedback": len(get_all_feedback()),
         "questions": len(get_pending_questions()),
@@ -588,14 +516,7 @@ def get_db_stats():
     print(f"📊 آمار دیتابیس: {stats}")
     return stats
 
-# ========================================
-# ===== بستن اتصال دیتابیس =====
-# ========================================
-
 def close_db():
-    """
-    بستن اتصال دیتابیس
-    """
     db.close()
     print("🔗 اتصال دیتابیس بسته شد")
     return True
