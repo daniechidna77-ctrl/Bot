@@ -49,6 +49,19 @@ async def is_member(bot, user_id):
             return False
     return True
 
+# ===== نمایش بنر (متن، عکس یا ویدیو) =====
+async def send_banner(message, banner_data):
+    banner_type = banner_data.get("type", "text")
+    file_id = banner_data.get("file_id")
+    text = banner_data.get("text", "")
+    
+    if banner_type == "photo" and file_id:
+        await message.answer_photo(file_id, caption=text)
+    elif banner_type == "video" and file_id:
+        await message.answer_video(file_id, caption=text)
+    else:
+        await message.answer(text)
+
 # ===== ارسال فایل (بدون اشتراک‌گذاری) =====
 async def send_file_only(message, file_id, file_type, code, caption=""):
     final_caption = f"📖 **چپتر {code}**\n"
@@ -71,14 +84,15 @@ async def send_file_only(message, file_id, file_type, code, caption=""):
 @router.message(CommandStart())
 async def start(message: types.Message):
     args = message.text.split()
-    banner = get_banner()
+    banner_data = get_banner()
     add_user(message.from_user.id)
     post_link = get_reaction_post()
     
     if len(args) == 1:
+        # ارسال بنر (متن، عکس یا ویدیو) به همراه پیام خوش‌آمدگویی
+        await send_banner(message, banner_data)
         await message.answer(
             f"👋 **سلام {message.from_user.first_name}!**\n\n"
-            f"{banner}\n\n"
             f"😊 خوش اومدی! از منو استفاده کن.",
             reply_markup=user_menu_keyboard()
         )
@@ -101,6 +115,8 @@ async def start(message: types.Message):
     if file_info:
         file_id, file_type, caption = file_info
         increment_download(code)
+        # ارسال بنر قبل از فایل
+        await send_banner(message, banner_data)
         await send_file_only(message, file_id, file_type, code, caption or "")
     else:
         await message.answer(f"❌ **چپتر {code} پیدا نشد!** 😅")
@@ -126,12 +142,15 @@ async def check_mem(call: types.CallbackQuery):
     if file_info:
         file_id, file_type, caption = file_info
         increment_download(code)
+        # ارسال بنر قبل از فایل
+        banner_data = get_banner()
+        await send_banner(call.message, banner_data)
         await send_file_only(call.message, file_id, file_type, code, caption or "")
     else:
         await call.message.answer(f"❌ چپتر {code} پیدا نشد! 😅")
 
 # ========================================
-# ===== منوی کاربر =====
+# ===== بقیه کدها (منو، راهنما، ...) =====
 # ========================================
 
 @router.message(Command("menu"))
@@ -141,10 +160,6 @@ async def menu(message: types.Message):
         "😊 هر چی نیاز داری، اینجاست!",
         reply_markup=user_menu_keyboard()
     )
-
-# ========================================
-# ===== راهنما =====
-# ========================================
 
 @router.message(lambda m: m.text == "📖 راهنما")
 async def help_menu(message: types.Message):
@@ -156,10 +171,6 @@ async def help_menu(message: types.Message):
         "🔹 اگه سوالی داری، از منو بپرس 😊"
     )
 
-# ========================================
-# ===== لیست کانال‌ها =====
-# ========================================
-
 @router.message(lambda m: m.text == "📢 کانال‌ها")
 async def channels_list_menu(message: types.Message):
     channels = get_channels()
@@ -169,10 +180,6 @@ async def channels_list_menu(message: types.Message):
     text = "📢 **لیست کانال‌ها:**\n\n" + "\n".join([f"• @{ch}" for ch in channels])
     await message.answer(text)
 
-# ========================================
-# ===== پروفایل =====
-# ========================================
-
 @router.message(lambda m: m.text == "👤 پروفایل")
 async def profile_menu(message: types.Message):
     await message.answer(
@@ -180,10 +187,6 @@ async def profile_menu(message: types.Message):
         f"🆔 آیدی: `{message.from_user.id}`\n"
         f"📛 نام: {message.from_user.full_name}"
     )
-
-# ========================================
-# ===== نظر یا پیشنهاد =====
-# ========================================
 
 @router.message(lambda m: m.text == "💬 نظر یا پیشنهاد")
 async def feedback_start(message: types.Message):
@@ -196,10 +199,6 @@ async def get_feedback(message: types.Message):
     clear_user_state(message.from_user.id)
     await message.answer("✅ **نظرت ثبت شد!** 🙏\n\nممنون که کمک میکنی بهتر بشم 😊")
 
-# ========================================
-# ===== سوال =====
-# ========================================
-
 @router.message(lambda m: m.text == "❓ سوال")
 async def ask_question_start(message: types.Message):
     user_states[message.from_user.id] = {"state": "waiting_question"}
@@ -210,10 +209,6 @@ async def get_question(message: types.Message):
     add_question(message.from_user.id, message.text)
     clear_user_state(message.from_user.id)
     await message.answer("✅ **سوال شما ثبت شد!** 📝\n\nبه زودی جواب میدم 😊")
-
-# ========================================
-# ===== دعوت به ربات =====
-# ========================================
 
 @router.message(lambda m: m.text == "📤 دعوت به ربات")
 async def share_bot(message: types.Message):
@@ -232,17 +227,9 @@ async def share_bot(message: types.Message):
         reply_markup=keyboard
     )
 
-# ========================================
-# ===== کپی لینک ربات =====
-# ========================================
-
 @router.callback_query(lambda c: c.data == "copy_bot_link")
 async def copy_bot_link(call: types.CallbackQuery):
     await call.answer(f"✅ لینک کپی شد!", show_alert=True)
-
-# ========================================
-# ===== پاک کردن حالت کاربر =====
-# ========================================
 
 def clear_user_state(user_id):
     if user_id in user_states:
