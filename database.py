@@ -1,13 +1,44 @@
 import sqlite3
 import os
+import shutil
 from datetime import datetime, timedelta
 from config import DEFAULT_CHANNELS
 
-# ===== بررسی وجود دیتابیس =====
-if not os.path.exists("bot.db"):
-    print("📁 فایل دیتابیس پیدا نشد، در حال ساخت دیتابیس جدید...")
+# ========================================
+# ===== بکاپ خودکار =====
+# ========================================
 
+def backup_db():
+    """گرفتن بکاپ از دیتابیس"""
+    if os.path.exists("bot.db"):
+        shutil.copy("bot.db", "bot_backup.db")
+        print("📁 بکاپ گرفته شد!")
+        return True
+    return False
+
+def restore_db():
+    """بازیابی از بکاپ"""
+    if os.path.exists("bot_backup.db"):
+        shutil.copy("bot_backup.db", "bot.db")
+        print("✅ دیتابیس از بکاپ بازیابی شد!")
+        return True
+    return False
+
+# ========================================
+# ===== بررسی وجود دیتابیس =====
+# ========================================
+
+if not os.path.exists("bot.db"):
+    print("📁 فایل دیتابیس پیدا نشد!")
+    if restore_db():
+        print("✅ دیتابیس از بکاپ بازیابی شد!")
+    else:
+        print("📁 در حال ساخت دیتابیس جدید...")
+
+# ========================================
 # ===== اتصال به دیتابیس =====
+# ========================================
+
 db = sqlite3.connect("bot.db", check_same_thread=False)
 c = db.cursor()
 
@@ -17,7 +48,6 @@ print("🔗 اتصال به دیتابیس برقرار شد!")
 # ===== ساخت جدول‌ها =====
 # ========================================
 
-# جدول فایل‌ها (چپترها)
 c.execute("""
     CREATE TABLE IF NOT EXISTS files (
         code TEXT PRIMARY KEY,
@@ -28,14 +58,12 @@ c.execute("""
     )
 """)
 
-# جدول کانال‌های اجباری
 c.execute("""
     CREATE TABLE IF NOT EXISTS channels (
         username TEXT PRIMARY KEY
     )
 """)
 
-# ===== جدول بنر (با پشتیبانی از چند بنر و زمان‌بندی) =====
 c.execute("""
     CREATE TABLE IF NOT EXISTS banners (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,7 +76,6 @@ c.execute("""
     )
 """)
 
-# جدول کاربران
 c.execute("""
     CREATE TABLE IF NOT EXISTS users (
         user_id INTEGER PRIMARY KEY,
@@ -56,7 +83,6 @@ c.execute("""
     )
 """)
 
-# جدول نظرات و پیشنهادات
 c.execute("""
     CREATE TABLE IF NOT EXISTS feedback (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +92,6 @@ c.execute("""
     )
 """)
 
-# جدول سوالات کاربران
 c.execute("""
     CREATE TABLE IF NOT EXISTS questions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -78,7 +103,6 @@ c.execute("""
     )
 """)
 
-# جدول پیام‌های زمان‌بندی شده
 c.execute("""
     CREATE TABLE IF NOT EXISTS broadcast (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -88,7 +112,6 @@ c.execute("""
     )
 """)
 
-# جدول لینک پست برای ری اکشن
 c.execute("""
     CREATE TABLE IF NOT EXISTS reaction_post (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,7 +132,13 @@ db.commit()
 print(f"✅ کانال‌های پیش‌فرض اضافه شدند: {', '.join(DEFAULT_CHANNELS)}")
 
 # ========================================
-# ===== توابع مربوط به فایل‌ها (چپترها) =====
+# ===== بکاپ خودکار =====
+# ========================================
+
+backup_db()
+
+# ========================================
+# ===== توابع فایل‌ها =====
 # ========================================
 
 def save_file(code, file_id, file_type="document", caption=""):
@@ -118,7 +147,8 @@ def save_file(code, file_id, file_type="document", caption=""):
         VALUES (?, ?, ?, ?)
     """, (code, file_id, file_type, caption))
     db.commit()
-    print(f"📁 فایل با کد '{code}' ذخیره شد (نوع: {file_type})")
+    backup_db()  # بعد از هر تغییر، بکاپ بگیر
+    print(f"📁 فایل با کد '{code}' ذخیره شد")
     return True
 
 def find_file(code):
@@ -128,16 +158,12 @@ def find_file(code):
         WHERE code = ?
     """, (code,))
     row = c.fetchone()
-    if row:
-        print(f"🔍 فایل با کد '{code}' پیدا شد")
-        return row
-    print(f"❌ فایل با کد '{code}' پیدا نشد")
-    return None
+    return row if row else None
 
 def delete_file(code):
     c.execute("DELETE FROM files WHERE code = ?", (code,))
     db.commit()
-    print(f"🗑 فایل با کد '{code}' حذف شد")
+    backup_db()
     return True
 
 def get_all_files():
@@ -146,9 +172,7 @@ def get_all_files():
         FROM files
         ORDER BY code
     """)
-    rows = c.fetchall()
-    print(f"📋 تعداد کل فایل‌ها: {len(rows)}")
-    return rows
+    return c.fetchall()
 
 def increment_download(code):
     c.execute("""
@@ -157,63 +181,45 @@ def increment_download(code):
         WHERE code = ?
     """, (code,))
     db.commit()
-    print(f"📥 دانلود چپتر '{code}' ثبت شد")
     return True
 
-def get_download_count(code):
-    c.execute("""
-        SELECT downloads
-        FROM files
-        WHERE code = ?
-    """, (code,))
-    row = c.fetchone()
-    return row[0] if row else 0
-
 # ========================================
-# ===== توابع مربوط به کانال‌ها =====
+# ===== توابع کانال‌ها =====
 # ========================================
 
 def add_channel(username):
     username = username.replace("@", "").strip()
     c.execute("INSERT OR IGNORE INTO channels VALUES (?)", (username,))
     db.commit()
-    print(f"📢 کانال @{username} اضافه شد")
+    backup_db()
     return True
 
 def delete_channel(username):
     username = username.replace("@", "").strip()
     c.execute("DELETE FROM channels WHERE username = ?", (username,))
     db.commit()
-    print(f"🗑 کانال @{username} حذف شد")
+    backup_db()
     return True
 
 def get_channels():
     c.execute("SELECT username FROM channels ORDER BY username")
     rows = c.fetchall()
-    channels = [row[0] for row in rows]
-    print(f"📋 تعداد کانال‌های اجباری: {len(channels)}")
-    return channels
-
-def get_channels_count():
-    c.execute("SELECT COUNT(*) FROM channels")
-    return c.fetchone()[0]
+    return [row[0] for row in rows]
 
 # ========================================
-# ===== توابع مربوط به بنر (جدید) =====
+# ===== توابع بنر =====
 # ========================================
 
 def add_banner(banner_type, file_id=None, text="", expire_date=None, schedule_time=None):
-    """افزودن بنر جدید به دیتابیس"""
     c.execute("""
         INSERT INTO banners (type, file_id, text, expire_date, schedule_time, created_at)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (banner_type, file_id, text, expire_date, schedule_time, datetime.now().isoformat()))
     db.commit()
-    print(f"📝 بنر جدید اضافه شد (نوع: {banner_type})")
+    backup_db()
     return c.lastrowid
 
 def get_all_banners():
-    """دریافت لیست همه بنرها"""
     c.execute("""
         SELECT id, type, file_id, text, expire_date, schedule_time
         FROM banners
@@ -233,11 +239,9 @@ def get_all_banners():
     return banners
 
 def get_active_banner():
-    """دریافت بنر فعال (غیرمنقضی و زمان‌بندی شده)"""
     now = datetime.now().isoformat()
-    
-    # حذف بنرهای منقضی شده
-    delete_expired_banners()
+    c.execute("DELETE FROM banners WHERE expire_date IS NOT NULL AND expire_date < ?", (now,))
+    db.commit()
     
     c.execute("""
         SELECT id, type, file_id, text
@@ -250,38 +254,26 @@ def get_active_banner():
     
     row = c.fetchone()
     if row:
-        print(f"📝 بنر فعال پیدا شد (ID: {row[0]})")
         return {
             "id": row[0],
             "type": row[1],
             "file_id": row[2],
             "text": row[3] or ""
         }
-    
-    print("📝 هیچ بنر فعالی پیدا نشد")
     return {"type": "text", "file_id": None, "text": "📢 به ربات خوش اومدی!"}
 
 def delete_banner(banner_id):
-    """حذف بنر با ID مشخص"""
     c.execute("DELETE FROM banners WHERE id = ?", (banner_id,))
     db.commit()
-    print(f"🗑 بنر {banner_id} حذف شد")
+    backup_db()
     return True
 
-def delete_expired_banners():
-    """حذف بنرهای منقضی شده"""
-    now = datetime.now().isoformat()
-    c.execute("DELETE FROM banners WHERE expire_date IS NOT NULL AND expire_date < ?", (now,))
-    db.commit()
-    print("🗑 بنرهای منقضی شده حذف شدند")
-
 def get_banner_count():
-    """دریافت تعداد کل بنرها"""
     c.execute("SELECT COUNT(*) FROM banners")
     return c.fetchone()[0]
 
 # ========================================
-# ===== توابع مربوط به کاربران =====
+# ===== توابع کاربران =====
 # ========================================
 
 def add_user(user_id):
@@ -290,29 +282,19 @@ def add_user(user_id):
         VALUES (?, ?)
     """, (user_id, datetime.now().isoformat()))
     db.commit()
-    print(f"👤 کاربر {user_id} ثبت شد")
     return True
 
 def get_all_users():
     c.execute("SELECT user_id FROM users ORDER BY user_id")
     rows = c.fetchall()
-    users = [row[0] for row in rows]
-    print(f"👥 تعداد کل کاربران: {len(users)}")
-    return users
+    return [row[0] for row in rows]
 
 def get_user_count():
     c.execute("SELECT COUNT(*) FROM users")
-    count = c.fetchone()[0]
-    print(f"👥 تعداد کاربران: {count}")
-    return count
-
-def get_user_join_date(user_id):
-    c.execute("SELECT join_date FROM users WHERE user_id = ?", (user_id,))
-    row = c.fetchone()
-    return row[0] if row else None
+    return c.fetchone()[0]
 
 # ========================================
-# ===== توابع مربوط به نظرات =====
+# ===== توابع نظرات =====
 # ========================================
 
 def add_feedback(user_id, message):
@@ -321,7 +303,6 @@ def add_feedback(user_id, message):
         VALUES (?, ?, ?)
     """, (user_id, message, datetime.now().isoformat()))
     db.commit()
-    print(f"💬 نظر جدید از کاربر {user_id} ثبت شد")
     return True
 
 def get_all_feedback():
@@ -330,27 +311,10 @@ def get_all_feedback():
         FROM feedback
         ORDER BY date DESC
     """)
-    rows = c.fetchall()
-    print(f"💬 تعداد کل نظرات: {len(rows)}")
-    return rows
-
-def get_feedback_by_user(user_id):
-    c.execute("""
-        SELECT id, message, date
-        FROM feedback
-        WHERE user_id = ?
-        ORDER BY date DESC
-    """, (user_id,))
     return c.fetchall()
 
-def delete_feedback(feedback_id):
-    c.execute("DELETE FROM feedback WHERE id = ?", (feedback_id,))
-    db.commit()
-    print(f"🗑 نظر {feedback_id} حذف شد")
-    return True
-
 # ========================================
-# ===== توابع مربوط به سوالات =====
+# ===== توابع سوالات =====
 # ========================================
 
 def add_question(user_id, question):
@@ -359,7 +323,6 @@ def add_question(user_id, question):
         VALUES (?, ?, ?, ?)
     """, (user_id, question, datetime.now().isoformat(), "pending"))
     db.commit()
-    print(f"❓ سوال جدید از کاربر {user_id} ثبت شد")
     return True
 
 def get_pending_questions():
@@ -369,16 +332,6 @@ def get_pending_questions():
         WHERE status = 'pending'
         ORDER BY date ASC
     """)
-    rows = c.fetchall()
-    print(f"❓ تعداد سوالات بدون پاسخ: {len(rows)}")
-    return rows
-
-def get_all_questions():
-    c.execute("""
-        SELECT id, user_id, question, answer, date, status
-        FROM questions
-        ORDER BY date DESC
-    """)
     return c.fetchall()
 
 def get_question_data(question_id):
@@ -387,8 +340,7 @@ def get_question_data(question_id):
         FROM questions
         WHERE id = ?
     """, (question_id,))
-    row = c.fetchone()
-    return row if row else None
+    return c.fetchone()
 
 def answer_question(question_id, answer):
     c.execute("""
@@ -397,20 +349,10 @@ def answer_question(question_id, answer):
         WHERE id = ?
     """, (answer, question_id))
     db.commit()
-    print(f"✏️ پاسخ سوال {question_id} ثبت شد")
     return True
 
-def get_user_questions(user_id):
-    c.execute("""
-        SELECT question, answer, status, date
-        FROM questions
-        WHERE user_id = ?
-        ORDER BY date DESC
-    """, (user_id,))
-    return c.fetchall()
-
 # ========================================
-# ===== توابع مربوط به زمان‌بندی =====
+# ===== توابع زمان‌بندی =====
 # ========================================
 
 def add_scheduled_broadcast(message, send_date, status="pending"):
@@ -419,7 +361,6 @@ def add_scheduled_broadcast(message, send_date, status="pending"):
         VALUES (?, ?, ?)
     """, (message, send_date, status))
     db.commit()
-    print(f"⏰ پیام زمان‌بندی شده در {send_date} ثبت شد")
     return True
 
 def get_pending_broadcasts():
@@ -429,9 +370,7 @@ def get_pending_broadcasts():
         WHERE status = 'pending'
         ORDER BY date ASC
     """)
-    rows = c.fetchall()
-    print(f"⏰ تعداد پیام‌های زمان‌بندی شده: {len(rows)}")
-    return rows
+    return c.fetchall()
 
 def update_broadcast_status(broadcast_id, status):
     c.execute("""
@@ -440,76 +379,44 @@ def update_broadcast_status(broadcast_id, status):
         WHERE id = ?
     """, (status, broadcast_id))
     db.commit()
-    print(f"⏰ وضعیت پیام {broadcast_id} به {status} تغییر کرد")
     return True
 
-def get_all_broadcasts():
-    c.execute("""
-        SELECT id, message, date, status
-        FROM broadcast
-        ORDER BY date DESC
-    """)
-    return c.fetchall()
-
 # ========================================
-# ===== توابع مربوط به ری اکشن پست =====
+# ===== توابع ری اکشن پست =====
 # ========================================
 
 def set_reaction_post(post_link):
     c.execute("DELETE FROM reaction_post")
     c.execute("INSERT INTO reaction_post (post_link) VALUES (?)", (post_link,))
     db.commit()
-    print(f"👍 لینک پست ری اکشن ذخیره شد: {post_link}")
     return True
 
 def get_reaction_post():
     c.execute("SELECT post_link FROM reaction_post ORDER BY id DESC LIMIT 1")
     row = c.fetchone()
-    if row:
-        print(f"👍 لینک پست ری اکشن: {row[0]}")
-        return row[0]
-    print("👍 هیچ پست ری اکشنی تنظیم نشده")
-    return None
+    return row[0] if row else None
 
 def delete_reaction_post():
     c.execute("DELETE FROM reaction_post")
     db.commit()
-    print("🗑 پست ری اکشن حذف شد")
     return True
 
 # ========================================
 # ===== توابع کمکی =====
 # ========================================
 
-def clear_all_data():
-    c.execute("DELETE FROM files")
-    c.execute("DELETE FROM channels")
-    c.execute("DELETE FROM banners")
-    c.execute("DELETE FROM users")
-    c.execute("DELETE FROM feedback")
-    c.execute("DELETE FROM questions")
-    c.execute("DELETE FROM broadcast")
-    c.execute("DELETE FROM reaction_post")
-    db.commit()
-    print("🗑 تمام داده‌ها پاک شدند")
-    return True
-
 def get_db_stats():
-    stats = {
+    return {
         "files": len(get_all_files()),
         "channels": len(get_channels()),
         "banners": get_banner_count(),
         "users": get_user_count(),
         "feedback": len(get_all_feedback()),
-        "questions": len(get_pending_questions()),
-        "broadcast": len(get_pending_broadcasts())
+        "questions": len(get_pending_questions())
     }
-    print(f"📊 آمار دیتابیس: {stats}")
-    return stats
 
 def close_db():
     db.close()
-    print("🔗 اتصال دیتابیس بسته شد")
     return True
 
 print("✅ دیتابیس با موفقیت راه‌اندازی شد!")
