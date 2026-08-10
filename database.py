@@ -3,17 +3,11 @@ import os
 from datetime import datetime, timedelta
 from config import DEFAULT_CHANNELS
 
-# ========================================
 # ===== بررسی وجود دیتابیس =====
-# ========================================
-
 if not os.path.exists("bot.db"):
     print("📁 فایل دیتابیس پیدا نشد، در حال ساخت دیتابیس جدید...")
 
-# ========================================
 # ===== اتصال به دیتابیس =====
-# ========================================
-
 db = sqlite3.connect("bot.db", check_same_thread=False)
 c = db.cursor()
 
@@ -41,14 +35,16 @@ c.execute("""
     )
 """)
 
-# جدول بنر (با پشتیبانی از عکس و ویدیو)
+# ===== جدول بنر (با پشتیبانی از چند بنر و زمان‌بندی) =====
 c.execute("""
-    CREATE TABLE IF NOT EXISTS banner (
+    CREATE TABLE IF NOT EXISTS banners (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         type TEXT DEFAULT 'text',
         file_id TEXT,
         text TEXT,
-        expire_date TEXT
+        expire_date TEXT,
+        schedule_time TEXT,
+        created_at TEXT
     )
 """)
 
@@ -203,92 +199,86 @@ def get_channels_count():
     return c.fetchone()[0]
 
 # ========================================
-# ===== توابع مربوط به بنر (با عکس و ویدیو) =====
+# ===== توابع مربوط به بنر (جدید) =====
 # ========================================
 
-def set_banner_text(text, expire_date=None):
-    """تنظیم بنر به صورت متن"""
-    c.execute("DELETE FROM banner")
+def add_banner(banner_type, file_id=None, text="", expire_date=None, schedule_time=None):
+    """افزودن بنر جدید به دیتابیس"""
     c.execute("""
-        INSERT INTO banner (type, text, expire_date)
-        VALUES (?, ?, ?)
-    """, ("text", text, expire_date))
+        INSERT INTO banners (type, file_id, text, expire_date, schedule_time, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (banner_type, file_id, text, expire_date, schedule_time, datetime.now().isoformat()))
     db.commit()
-    print(f"📝 بنر متنی ذخیره شد: {text}")
-    return True
+    print(f"📝 بنر جدید اضافه شد (نوع: {banner_type})")
+    return c.lastrowid
 
-def set_banner_photo(file_id, caption="", expire_date=None):
-    """تنظیم بنر به صورت عکس"""
-    c.execute("DELETE FROM banner")
+def get_all_banners():
+    """دریافت لیست همه بنرها"""
     c.execute("""
-        INSERT INTO banner (type, file_id, text, expire_date)
-        VALUES (?, ?, ?, ?)
-    """, ("photo", file_id, caption, expire_date))
-    db.commit()
-    print(f"🖼 بنر عکس ذخیره شد")
-    return True
-
-def set_banner_video(file_id, caption="", expire_date=None):
-    """تنظیم بنر به صورت ویدیو"""
-    c.execute("DELETE FROM banner")
-    c.execute("""
-        INSERT INTO banner (type, file_id, text, expire_date)
-        VALUES (?, ?, ?, ?)
-    """, ("video", file_id, caption, expire_date))
-    db.commit()
-    print(f"🎬 بنر ویدیو ذخیره شد")
-    return True
-
-def get_banner():
-    """دریافت بنر فعلی (متن، عکس یا ویدیو)"""
-    c.execute("""
-        SELECT type, file_id, text, expire_date
-        FROM banner
-        ORDER BY id DESC LIMIT 1
+        SELECT id, type, file_id, text, expire_date, schedule_time
+        FROM banners
+        ORDER BY created_at DESC
     """)
-    row = c.fetchone()
+    rows = c.fetchall()
+    banners = []
+    for row in rows:
+        banners.append({
+            "id": row[0],
+            "type": row[1],
+            "file_id": row[2],
+            "text": row[3] or "",
+            "expire_date": row[4],
+            "schedule_time": row[5]
+        })
+    return banners
+
+def get_active_banner():
+    """دریافت بنر فعال (غیرمنقضی و زمان‌بندی شده)"""
+    now = datetime.now().isoformat()
     
+    # حذف بنرهای منقضی شده
+    delete_expired_banners()
+    
+    c.execute("""
+        SELECT id, type, file_id, text
+        FROM banners
+        WHERE (expire_date IS NULL OR expire_date > ?)
+        AND (schedule_time IS NULL OR schedule_time <= ?)
+        ORDER BY created_at DESC
+        LIMIT 1
+    """, (now, now))
+    
+    row = c.fetchone()
     if row:
-        banner_type, file_id, text, expire_date = row
-        
-        # بررسی تاریخ انقضا
-        if expire_date:
-            try:
-                expire_datetime = datetime.fromisoformat(expire_date)
-                if datetime.now() > expire_datetime:
-                    print("⏰ بنر منقضی شده است")
-                    return {"type": "text", "file_id": None, "text": "📢 به ربات خوش اومدی!"}
-            except:
-                pass
-        
-        print(f"📝 بنر فعلی دریافت شد (نوع: {banner_type})")
+        print(f"📝 بنر فعال پیدا شد (ID: {row[0]})")
         return {
-            "type": banner_type,
-            "file_id": file_id,
-            "text": text or ""
+            "id": row[0],
+            "type": row[1],
+            "file_id": row[2],
+            "text": row[3] or ""
         }
     
-    print("📝 هیچ بنری تنظیم نشده، بنر پیش‌فرض استفاده می‌شود")
+    print("📝 هیچ بنر فعالی پیدا نشد")
     return {"type": "text", "file_id": None, "text": "📢 به ربات خوش اومدی!"}
 
-def delete_banner():
-    """حذف بنر فعلی"""
-    c.execute("DELETE FROM banner")
+def delete_banner(banner_id):
+    """حذف بنر با ID مشخص"""
+    c.execute("DELETE FROM banners WHERE id = ?", (banner_id,))
     db.commit()
-    print("🗑 بنر حذف شد")
+    print(f"🗑 بنر {banner_id} حذف شد")
     return True
 
-def get_banner_expire_date():
-    """دریافت تاریخ انقضای بنر"""
-    c.execute("SELECT expire_date FROM banner ORDER BY id DESC LIMIT 1")
-    row = c.fetchone()
-    return row[0] if row and row[0] else None
+def delete_expired_banners():
+    """حذف بنرهای منقضی شده"""
+    now = datetime.now().isoformat()
+    c.execute("DELETE FROM banners WHERE expire_date IS NOT NULL AND expire_date < ?", (now,))
+    db.commit()
+    print("🗑 بنرهای منقضی شده حذف شدند")
 
-def get_banner_type():
-    """دریافت نوع بنر (text, photo, video)"""
-    c.execute("SELECT type FROM banner ORDER BY id DESC LIMIT 1")
-    row = c.fetchone()
-    return row[0] if row else "text"
+def get_banner_count():
+    """دریافت تعداد کل بنرها"""
+    c.execute("SELECT COUNT(*) FROM banners")
+    return c.fetchone()[0]
 
 # ========================================
 # ===== توابع مربوط به کاربران =====
@@ -488,13 +478,13 @@ def delete_reaction_post():
     return True
 
 # ========================================
-# ===== توابع کمکی و ابزاری =====
+# ===== توابع کمکی =====
 # ========================================
 
 def clear_all_data():
     c.execute("DELETE FROM files")
     c.execute("DELETE FROM channels")
-    c.execute("DELETE FROM banner")
+    c.execute("DELETE FROM banners")
     c.execute("DELETE FROM users")
     c.execute("DELETE FROM feedback")
     c.execute("DELETE FROM questions")
@@ -508,6 +498,7 @@ def get_db_stats():
     stats = {
         "files": len(get_all_files()),
         "channels": len(get_channels()),
+        "banners": get_banner_count(),
         "users": get_user_count(),
         "feedback": len(get_all_feedback()),
         "questions": len(get_pending_questions()),
