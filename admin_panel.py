@@ -674,4 +674,67 @@ async def view_project(message: types.Message):
     user_states[message.from_user.id] = {"current_project": project_name}
 
 # ===== اجرا =====
-@router.message(lambda m: m.from_user.id == ADMIN
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text == "▶️ اجرا" and user_states.get(m.from_user.id, {}).get("current_project"))
+async def run_project(message: types.Message):
+    project_name = user_states[message.from_user.id]["current_project"]
+    project_path = f"{PROJECTS_DIR}/{project_name}"
+    
+    if not os.path.exists(project_path):
+        await message.answer("❌ پروژه پیدا نشد!")
+        return
+    
+    try:
+        process = subprocess.Popen(
+            ["python3", "main.py"],
+            cwd=project_path,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        projects = load_projects()
+        projects[project_name]["status"] = "active"
+        projects[project_name]["pid"] = process.pid
+        save_projects(projects)
+        
+        await message.answer(f"✅ **ربات {project_name} با موفقیت اجرا شد!** 🚀")
+    except Exception as e:
+        await message.answer(f"❌ خطا در اجرا: {str(e)}")
+
+# ===== توقف =====
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text == "⏹ توقف" and user_states.get(m.from_user.id, {}).get("current_project"))
+async def stop_project(message: types.Message):
+    project_name = user_states[message.from_user.id]["current_project"]
+    projects = load_projects()
+    
+    pid = projects.get(project_name, {}).get("pid")
+    if pid:
+        try:
+            os.kill(pid, 9)
+            projects[project_name]["status"] = "stopped"
+            save_projects(projects)
+            await message.answer(f"✅ ربات {project_name} متوقف شد!")
+        except:
+            await message.answer(f"⚠️ ربات در حال اجرا نیست!")
+    else:
+        await message.answer(f"⚠️ ربات در حال اجرا نیست!")
+
+# ===== حذف پروژه =====
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text == "🗑 حذف" and user_states.get(m.from_user.id, {}).get("current_project"))
+async def delete_project(message: types.Message):
+    project_name = user_states[message.from_user.id]["current_project"]
+    
+    shutil.rmtree(f"{PROJECTS_DIR}/{project_name}")
+    
+    projects = load_projects()
+    if project_name in projects:
+        del projects[project_name]
+    save_projects(projects)
+    
+    clear_user_state(message.from_user.id)
+    await message.answer(f"✅ پروژه {project_name} حذف شد!")
+
+# ===== بازگشت به لیست =====
+@router.message(lambda m: m.from_user.id == ADMIN_ID and m.text == "🔙 بازگشت به لیست")
+async def back_to_list(message: types.Message):
+    await my_projects(message)
