@@ -5,12 +5,18 @@ import os
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 
-# ===== تنظیمات (فقط همینجا رو عوض کن) =====
-TOKEN = "توکن_ربات_اینجا"  # ← از @BotFather بگیر
-ADMIN_ID = 8255361263  # ← آیدی عددی خودت
+# ===== تنظیمات =====
+TOKEN = "توکن_ربات_اینجا"
+ADMIN_ID = 8255361263
 
-# ===== مسیر دیتابیس (برای ریلیوی) =====
+# ===== مسیر دیتابیس =====
 DB_PATH = os.environ.get("DB_PATH", "bot.db")
+
+# ===== ساخت پوشه دیتابیس (اگه وجود نداشت) =====
+db_dir = os.path.dirname(DB_PATH)
+if db_dir and not os.path.exists(db_dir):
+    os.makedirs(db_dir, exist_ok=True)
+    print(f"📁 پوشه {db_dir} ساخته شد!")
 
 # ===== دیتابیس =====
 db = sqlite3.connect(DB_PATH)
