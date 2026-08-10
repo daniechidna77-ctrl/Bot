@@ -49,7 +49,7 @@ async def is_member(bot, user_id):
             return False
     return True
 
-# ===== نمایش بنر (متن، عکس یا ویدیو) =====
+# ===== نمایش بنر =====
 async def send_banner(message, banner_data):
     banner_type = banner_data.get("type", "text")
     file_id = banner_data.get("file_id")
@@ -62,11 +62,10 @@ async def send_banner(message, banner_data):
     else:
         await message.answer(text)
 
-# ===== ارسال فایل (بدون اشتراک‌گذاری) =====
-async def send_file_only(message, file_id, file_type, code, caption=""):
-    final_caption = f"📖 **چپتر {code}**\n"
-    if caption:
-        final_caption += f"\n{caption}"
+# ===== ارسال فایل (فقط کپشن، بدون چپتر اضافه) =====
+async def send_file_only(message, file_id, file_type, caption=""):
+    # ===== فقط کپشن =====
+    final_caption = caption if caption else ""
     
     if file_type == "document":
         await message.answer_document(file_id, caption=final_caption)
@@ -89,7 +88,6 @@ async def start(message: types.Message):
     post_link = get_reaction_post()
     
     if len(args) == 1:
-        # ارسال بنر (متن، عکس یا ویدیو) به همراه پیام خوش‌آمدگویی
         await send_banner(message, banner_data)
         await message.answer(
             f"👋 **سلام {message.from_user.first_name}!**\n\n"
@@ -115,9 +113,8 @@ async def start(message: types.Message):
     if file_info:
         file_id, file_type, caption = file_info
         increment_download(code)
-        # ارسال بنر قبل از فایل
         await send_banner(message, banner_data)
-        await send_file_only(message, file_id, file_type, code, caption or "")
+        await send_file_only(message, file_id, file_type, caption or "")
     else:
         await message.answer(f"❌ **چپتر {code} پیدا نشد!** 😅")
 
@@ -142,10 +139,9 @@ async def check_mem(call: types.CallbackQuery):
     if file_info:
         file_id, file_type, caption = file_info
         increment_download(code)
-        # ارسال بنر قبل از فایل
         banner_data = get_banner()
         await send_banner(call.message, banner_data)
-        await send_file_only(call.message, file_id, file_type, code, caption or "")
+        await send_file_only(call.message, file_id, file_type, caption or "")
     else:
         await call.message.answer(f"❌ چپتر {code} پیدا نشد! 😅")
 
