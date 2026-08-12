@@ -58,20 +58,24 @@ def get_file_type(file_path):
         return "other"
 
 # ========================================
-# ===== خلاصه‌سازی با جیمینای (نسخه نهایی) =====
+# ===== خلاصه‌سازی با جیمینای =====
 # ========================================
 async def summarize_with_gemini(file_path):
     if not GEMINI_API_KEY:
-        return "❌ کلید جیمینای تنظیم نشده! لطفاً GEMINI_API_KEY رو توی Variables تنظیم کن."
+        return "❌ کلید جیمینای تنظیم نشده!"
     
     try:
+        # استخراج متن از PDF
         doc = fitz.open(file_path)
         text = ""
         for page in doc:
             text += page.get_text()
         doc.close()
         
-        # استفاده از مدل 2.5 Flash
+        if len(text) < 50:
+            return "📝 متن کافی برای خلاصه‌سازی وجود ندارد!"
+        
+        # ارسال به جیمینای
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
         
         payload = {
@@ -86,31 +90,26 @@ async def summarize_with_gemini(file_path):
             async with session.post(url, json=payload, timeout=30) as response:
                 if response.status == 200:
                     data = await response.json()
-                    result = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "خلاصه‌ای پیدا نشد!")
-                    return result
+                    result = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                    return result if result else "❌ خلاصه‌ای پیدا نشد!"
                 else:
-                    error_text = await response.text()
-                    print(f"❌ خطا از جیمینای: {response.status} - {error_text}")
                     return f"❌ خطا از جیمینای: {response.status}"
     except Exception as e:
-        print(f"❌ خطا: {e}")
-        return f"❌ خطا در ارتباط با جیمینای: {str(e)[:100]}"
+        return f"❌ خطا: {str(e)[:100]}"
 
 # ========================================
-# ===== چت با جیمینای (شوخ و بازیگوش) =====
+# ===== چت با جیمینای =====
 # ========================================
 async def gemini_chat(text):
     if not GEMINI_API_KEY:
-        return "❌ کلید جیمینای تنظیم نشده! لطفاً GEMINI_API_KEY رو توی Variables تنظیم کن."
+        return "❌ کلید جیمینای تنظیم نشده!"
     
     try:
-        # استفاده از مدل 2.5 Flash
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
         
-        prompt = f"""تو یه دستیار هوشمند هستی با شخصیت شوخ، بازیگوش و صمیمی.
+        prompt = f"""تو یه دستیار هوشمند هستی با شخصیت شوخ و بازیگوش.
 به فارسی پاسخ بده.
-پاسخ‌هات کوتاه، جذاب و بدون تکرار باشه.
-اگه سوالی خارج از حوزت بود، با شوخی جواب بده.
+پاسخ‌هات کوتاه و جذاب باشه.
 
 سوال: {text}
 """
@@ -125,12 +124,9 @@ async def gemini_chat(text):
             async with session.post(url, json=payload, timeout=30) as response:
                 if response.status == 200:
                     data = await response.json()
-                    reply = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "جوابی پیدا نشد!")
-                    return reply
+                    reply = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                    return reply if reply else "❌ جوابی پیدا نشد!"
                 else:
-                    error_text = await response.text()
-                    print(f"❌ خطا از جیمینای: {response.status} - {error_text}")
                     return f"❌ خطا از جیمینای: {response.status}"
     except Exception as e:
-        print(f"❌ خطا: {e}")
-        return f"❌ خطا در ارتباط با جیمینای: {str(e)[:100]}"
+        return f"❌ خطا: {str(e)[:100]}"
