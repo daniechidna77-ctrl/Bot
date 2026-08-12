@@ -1,7 +1,6 @@
 import os
 import fitz
 from PIL import Image
-import io
 import aiohttp
 import json
 from config import GEMINI_API_KEY
@@ -26,7 +25,7 @@ async def clean_pdf(file_path):
         doc.close()
         return output_path
     except Exception as e:
-        print(f"❌ خطا در کلینر PDF: {e}")
+        print(f"❌ خطا: {e}")
         return None
 
 # ========================================
@@ -44,7 +43,7 @@ async def clean_image(file_path):
         image.save(output_path, quality=95, optimize=True)
         return output_path
     except Exception as e:
-        print(f"❌ خطا در کلینر عکس: {e}")
+        print(f"❌ خطا: {e}")
         return None
 
 # ========================================
@@ -55,38 +54,29 @@ def get_file_type(file_path):
         return "pdf"
     elif file_path.endswith((".jpg", ".jpeg", ".png", ".gif")):
         return "image"
-    elif file_path.endswith((".mp4", ".avi", ".mkv")):
-        return "video"
-    elif file_path.endswith((".zip", ".rar")):
-        return "archive"
     else:
         return "other"
 
 # ========================================
-# ===== خلاصه‌سازی با Gemini =====
+# ===== خلاصه‌سازی با جیمینای =====
 # ========================================
 async def summarize_with_gemini(file_path):
     if not GEMINI_API_KEY:
         return None
     
     try:
-        # خواندن متن فایل
-        if file_path.endswith(".pdf"):
-            doc = fitz.open(file_path)
-            text = ""
-            for page in doc:
-                text += page.get_text()
-            doc.close()
-        else:
-            return None
+        doc = fitz.open(file_path)
+        text = ""
+        for page in doc:
+            text += page.get_text()
+        doc.close()
         
-        # ارسال به Gemini
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
         
         payload = {
             "contents": [{
                 "parts": [{
-                    "text": f"خلاصه زیر را به فارسی بنویس:\n\n{text[:10000]}"
+                    "text": f"خلاصه زیر رو به فارسی بنویس (حداکثر ۵ خط):\n\n{text[:5000]}"
                 }]
             }]
         }
@@ -95,28 +85,33 @@ async def summarize_with_gemini(file_path):
             async with session.post(url, json=payload) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "خلاصه‌ای پیدا نشد!")
-                else:
-                    return None
+                    return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                return None
     except Exception as e:
-        print(f"❌ خطا در Gemini: {e}")
+        print(f"❌ خطا: {e}")
         return None
 
 # ========================================
-# ===== ترجمه با Gemini =====
+# ===== چت با جیمینای (شوخ و بازیگوش) =====
 # ========================================
-async def translate_with_gemini(text, target_lang="fa"):
+async def gemini_chat(text):
     if not GEMINI_API_KEY:
-        return None
+        return "😅 جیمینای در دسترس نیست! کلید API رو تنظیم کن."
     
     try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
         
+        prompt = f"""تو یه دستیار هوشمند هستی با شخصیت شوخ، بازیگوش و صمیمی.
+به فارسی پاسخ بده.
+پاسخ‌هات کوتاه، جذاب و بدون تکرار باشه.
+اگه سوالی خارج از حوزت بود، با شوخی جواب بده.
+
+سوال: {text}
+"""
+        
         payload = {
             "contents": [{
-                "parts": [{
-                    "text": f"متن زیر را به {target_lang} ترجمه کن:\n\n{text}"
-                }]
+                "parts": [{"text": prompt}]
             }]
         }
         
@@ -124,9 +119,9 @@ async def translate_with_gemini(text, target_lang="fa"):
             async with session.post(url, json=payload) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "ترجمه‌ای پیدا نشد!")
-                else:
-                    return None
+                    reply = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                    return reply
+                return "😅 یه مشکلی پیش اومده! بعداً دوباره امتحان کن."
     except Exception as e:
-        print(f"❌ خطا در Gemini: {e}")
-        return None
+        print(f"❌ خطا: {e}")
+        return "😅 نتونستم جواب بدم! شاید نت یا کلید جیمینای مشکل داره."
