@@ -1,16 +1,11 @@
 from aiogram import Router, types
 from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from config import ADMIN_ID
 from database import *
 import json
-import os
 
 router = Router()
 
-# ========================================
-# ===== کیبورد عضویت =====
-# ========================================
 def join_keyboard():
     channels = get_channels()
     buttons = []
@@ -19,29 +14,20 @@ def join_keyboard():
     buttons.append([InlineKeyboardButton(text="✅ عضو شدم", callback_data="check_mem")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-# ========================================
-# ===== تابع ارسال بنر =====
-# ========================================
 async def send_banner(message):
     banner = get_banner()
     if banner["type"] == "photo" and banner["file_id"]:
         await message.answer_photo(banner["file_id"], caption=banner["text"])
     elif banner["type"] == "video" and banner["file_id"]:
         await message.answer_video(banner["file_id"], caption=banner["text"])
-    elif banner["type"] == "document" and banner["file_id"]:
-        await message.answer_document(banner["file_id"], caption=banner["text"])
     else:
         await message.answer(banner["text"])
 
-# ========================================
-# ===== تابع ارسال فایل =====
-# ========================================
 async def send_file_and_banner(message, code):
     file_info = find_file(code)
     if file_info:
         file_id, file_type, caption = file_info
         increment_download(code)
-        
         if file_type == "document":
             await message.answer_document(file_id, caption=caption or f"📖 چپتر {code}")
         elif file_type == "photo":
@@ -50,14 +36,10 @@ async def send_file_and_banner(message, code):
             await message.answer_video(file_id, caption=caption or f"📖 چپتر {code}")
         else:
             await message.answer_document(file_id, caption=caption or f"📖 چپتر {code}")
-        
         await send_banner(message)
         return True
     return False
 
-# ========================================
-# ===== استارت (فقط لینک و عضویت) =====
-# ========================================
 @router.message(CommandStart())
 async def start(message: types.Message):
     args = message.text.split()
@@ -69,6 +51,7 @@ async def start(message: types.Message):
     )
     
     if len(args) == 1:
+        await send_banner(message)
         await message.answer("👋 سلام! برای دریافت چپتر از لینک مخصوص استفاده کن.")
         return
     
@@ -86,9 +69,6 @@ async def start(message: types.Message):
     
     await send_file_and_banner(message, code)
 
-# ========================================
-# ===== بررسی عضویت =====
-# ========================================
 @router.callback_query(lambda c: c.data == "check_mem")
 async def check_mem(call: types.CallbackQuery):
     try:
