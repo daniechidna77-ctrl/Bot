@@ -25,7 +25,7 @@ async def clean_pdf(file_path):
         doc.close()
         return output_path
     except Exception as e:
-        print(f"❌ خطا: {e}")
+        print(f"❌ خطا در کلینر PDF: {e}")
         return None
 
 # ========================================
@@ -43,7 +43,7 @@ async def clean_image(file_path):
         image.save(output_path, quality=95, optimize=True)
         return output_path
     except Exception as e:
-        print(f"❌ خطا: {e}")
+        print(f"❌ خطا در کلینر عکس: {e}")
         return None
 
 # ========================================
@@ -58,11 +58,11 @@ def get_file_type(file_path):
         return "other"
 
 # ========================================
-# ===== خلاصه‌سازی با جیمینای =====
+# ===== خلاصه‌سازی با جیمینای (نسخه نهایی) =====
 # ========================================
 async def summarize_with_gemini(file_path):
     if not GEMINI_API_KEY:
-        return None
+        return "❌ کلید جیمینای تنظیم نشده! لطفاً GEMINI_API_KEY رو توی Variables تنظیم کن."
     
     try:
         doc = fitz.open(file_path)
@@ -71,7 +71,8 @@ async def summarize_with_gemini(file_path):
             text += page.get_text()
         doc.close()
         
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+        # استفاده از مدل 2.5 Flash
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
         
         payload = {
             "contents": [{
@@ -82,24 +83,29 @@ async def summarize_with_gemini(file_path):
         }
         
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload) as response:
+            async with session.post(url, json=payload, timeout=30) as response:
                 if response.status == 200:
                     data = await response.json()
-                    return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                return None
+                    result = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "خلاصه‌ای پیدا نشد!")
+                    return result
+                else:
+                    error_text = await response.text()
+                    print(f"❌ خطا از جیمینای: {response.status} - {error_text}")
+                    return f"❌ خطا از جیمینای: {response.status}"
     except Exception as e:
         print(f"❌ خطا: {e}")
-        return None
+        return f"❌ خطا در ارتباط با جیمینای: {str(e)[:100]}"
 
 # ========================================
 # ===== چت با جیمینای (شوخ و بازیگوش) =====
 # ========================================
 async def gemini_chat(text):
     if not GEMINI_API_KEY:
-        return "😅 جیمینای در دسترس نیست! کلید API رو تنظیم کن."
+        return "❌ کلید جیمینای تنظیم نشده! لطفاً GEMINI_API_KEY رو توی Variables تنظیم کن."
     
     try:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+        # استفاده از مدل 2.5 Flash
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={GEMINI_API_KEY}"
         
         prompt = f"""تو یه دستیار هوشمند هستی با شخصیت شوخ، بازیگوش و صمیمی.
 به فارسی پاسخ بده.
@@ -116,12 +122,15 @@ async def gemini_chat(text):
         }
         
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload) as response:
+            async with session.post(url, json=payload, timeout=30) as response:
                 if response.status == 200:
                     data = await response.json()
-                    reply = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                    reply = data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "جوابی پیدا نشد!")
                     return reply
-                return "😅 یه مشکلی پیش اومده! بعداً دوباره امتحان کن."
+                else:
+                    error_text = await response.text()
+                    print(f"❌ خطا از جیمینای: {response.status} - {error_text}")
+                    return f"❌ خطا از جیمینای: {response.status}"
     except Exception as e:
         print(f"❌ خطا: {e}")
-        return "😅 نتونستم جواب بدم! شاید نت یا کلید جیمینای مشکل داره."
+        return f"❌ خطا در ارتباط با جیمینای: {str(e)[:100]}"
